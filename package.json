@@ -1,0 +1,23 @@
+{
+    "name": "qiq-mcp-server",
+    "version": "1.0.0",
+    "description": "Minimal MCP WebSocket server (JSON-RPC 2.0) for OpenAI Agent Builder",
+    "main": "scripts/mcp-server.js",
+    "type": "module",
+    "scripts": {
+        "mcp": "node scripts/mcp-server.js"
+    },
+    "keywords": [
+        "mcp",
+        "jsonrpc",
+        "websocket",
+        "agent",
+        "openai"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "dotenv": "^16.4.5",
+        "ws": "^8.18.0"
+    }
+}
