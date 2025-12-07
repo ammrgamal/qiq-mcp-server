@@ -9,9 +9,27 @@ Minimal MCP WebSocket server (JSON-RPC 2.0) for OpenAI Agent Builder, runs local
 ## JSON-RPC Methods
 ...
 ## Connect from OpenAI Agent (Agent Builder)
-...
+Use the MCP tool in Agent Builder and connect to your server:
+- URL: `wss://<your-domain-or-tunnel>/mcp`
+- Label: QIQ MCP
+- Description: QIQ MCP WebSocket
+- Authentication: None
+- Subprotocol: Client sets `mcp`; server supports `mcp` and `jsonrpc`.
+
 ## Local → Public (tunnel)
-...
+### ngrok
+```
+ngrok config add-authtoken <YOUR_TOKEN>
+ngrok http 3001
+```
+MCP URL: `wss://<random>.ngrok-free.dev/mcp`
+
+### localtunnel (no account)
+```
+npx localtunnel --port 3001 --subdomain qiqlab
+```
+MCP URL: `wss://qiqlab.loca.lt/mcp`
+
 ## Roadmap
 ## Deploy to Google Cloud Run
 
