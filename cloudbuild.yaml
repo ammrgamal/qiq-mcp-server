@@ -14,6 +14,26 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'Ensure Artifact Registry repo exists'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        echo "Ensuring Artifact Registry repo '${_REPOSITORY}' exists in region '${_REGION}' for project '$PROJECT_ID'"
+        # List repos; if not found, create it. This is safe to run repeatedly.
+        if ! gcloud artifacts repositories describe "${_REPOSITORY}" --location="${_REGION}" >/dev/null 2>&1; then
+          echo "Repository not found. Creating..."
+          gcloud artifacts repositories create "${_REPOSITORY}" \
+            --repository-format=docker \
+            --location="${_REGION}" \
+            --description="Docker repo for qiq-mcp-server"
+          echo "Repository created."
+        else
+          echo "Repository already exists."
+        fi
+
   - name: 'gcr.io/cloud-builders/docker'
     id: 'Build image'
     args:
