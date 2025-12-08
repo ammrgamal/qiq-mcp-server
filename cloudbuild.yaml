@@ -9,6 +9,7 @@ substitutions:
   _REGION: europe-west1     # Change if you use a different region
   _REPOSITORY: mcp-server   # Artifact Registry repo name (must exist)
   _IMAGE: mcp-server        # Image name inside the repo
+  _SERVICE: qiq-mcp-server  # Cloud Run service name
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -55,6 +56,21 @@ steps:
     args:
       - 'push'
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:latest'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'Deploy to Cloud Run'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        IMAGE_URI="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:latest"
+        echo "Deploying $IMAGE_URI to Cloud Run service ${_SERVICE} in region ${_REGION}"
+        gcloud run deploy "${_SERVICE}" \
+          --image "${IMAGE_URI}" \
+          --region "${_REGION}" \
+          --allow-unauthenticated \
+          --port 8080
 
 images:
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA'
