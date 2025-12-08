@@ -1,3 +1,4 @@
+import http from 'http';
 import { WebSocketServer } from 'ws';
 
 /**
@@ -20,6 +21,8 @@ export function createMcpServer(options = {}) {
     const NAME = options.name || 'MCP_GENERIC';
     const VERSION = options.version || '0.1.0';
     const PATH = options.path || '/mcp';
+    const HOST = options.host || '0.0.0.0';
+    const PORT = Number(process.env.PORT || options.port || 8080);
     const logger = options.logger || {
         info: (...a) => console.log('[INFO ]', ...a),
         warn: (...a) => console.warn('[WARN ]', ...a),
@@ -53,12 +56,12 @@ export function createMcpServer(options = {}) {
     // Use noServer mode so the HTTP server can control upgrade routing (Cloud Run safe)
     const wsServer = new WebSocketServer({
         noServer: true,
-        // Negotiate subprotocols: prefer 'mcp', then 'jsonrpc'; fallback to 'mcp' if none provided
+        // Subprotocol negotiation: prefer 'mcp', then 'jsonrpc'; fallback to 'mcp' if none provided
         handleProtocols: (protocols) => {
             const requested = Array.from(protocols || []);
             if (requested.includes('mcp')) return 'mcp';
             if (requested.includes('jsonrpc')) return 'jsonrpc';
-            // Agent Builder does not send a subprotocol; default to 'mcp' to allow connection
+            // No subprotocols provided by some clients (e.g., Agent Builder) → default to 'mcp'
             return 'mcp';
         },
     });
@@ -154,16 +157,50 @@ export function createMcpServer(options = {}) {
         onConnection(ws, request);
     }
 
+    // HTTP server with health and 426 for non-WS access to PATH
+    const httpServer = http.createServer((req, res) => {
+        if (req.url === PATH) {
+            res.statusCode = 426; // Upgrade Required
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'WebSocket-only endpoint. Upgrade with ws/wss.' }));
+            return;
+        }
+        if (req.url === '/') {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ name: NAME, version: VERSION, status: 'ok' }));
+            return;
+        }
+        res.statusCode = 404;
+        res.end('Not Found');
+    });
+
+    // HTTP → WebSocket upgrade routing
+    httpServer.on('upgrade', (req, socket, head) => {
+        if (req.url !== PATH) {
+            socket.destroy();
+            return;
+        }
+        wsServer.handleUpgrade(req, socket, head, (ws) => handleUpgrade(ws, req));
+    });
+
+    // Start listening (Cloud Run: PORT provided via env)
+    httpServer.listen(PORT, HOST, () => {
+        logger.info(`MCP server listening on ws://${HOST}:${PORT}${PATH}`);
+    });
+
     function stop() {
         return new Promise((resolve) => {
             try {
-                wsServer.close(() => resolve());
+                wsServer.close(() => {
+                    httpServer.close(() => resolve());
+                });
             } catch (_) {
                 resolve();
             }
         });
     }
 
-    // Return only generic hooks, no assumptions about HTTP server
-    return { wsServer, handleUpgrade, registerTool, getTools };
+    // Return hooks and servers for integration
+    return { httpServer, wsServer, handleUpgrade, registerTool, getTools };
 }
