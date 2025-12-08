@@ -1,7 +1,7 @@
 import http from 'http';
 import { createMcpServer } from './mcp.mjs';
 
-const PORT = process.env.PORT || 8080;
+const PORT = Number(process.env.PORT || 8080);
 const PATH = '/mcp';
 
 // create MCP server
@@ -44,6 +44,7 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 // Start server
-server.listen(PORT, () => {
-    console.log(`MCP server running on port ${PORT}`);
+const HOST = '0.0.0.0';
+server.listen(PORT, HOST, () => {
+    console.log(`MCP server running on port ${PORT} host ${HOST}`);
 });
