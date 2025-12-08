@@ -11,16 +11,21 @@ app.get('/mcp', (_req, res) => {
     res.status(426).json({ error: 'Upgrade Required' });
 });
 
-// SSE endpoint – send initial initialize message (Agent Builder expects this)
+// SSE endpoint – send initial initialize message and keep the stream alive
 app.get('/mcp/sse', async (req, res) => {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
     });
-    const initialize = await handleJsonRpc({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} });
+    const init = await handleJsonRpc({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} });
     res.write('event: message\n');
-    res.write(`data: ${JSON.stringify(initialize)}\n\n`);
+    res.write(`data: ${JSON.stringify(init)}\n\n`);
+    const interval = setInterval(() => {
+        res.write('event: ping\n');
+        res.write('data: "keep-alive"\n\n');
+    }, 25000);
+    req.on('close', () => clearInterval(interval));
 });
 
 // Optional HTTP JSON-RPC endpoint to produce SSE-compatible responses
@@ -32,7 +37,7 @@ app.post('/mcp/http', async (req, res) => {
 
 // Health
 app.get('/', (_req, res) => {
-    res.json({ name: 'MCP_HTTP_SSE+WS', tools: getTools() });
+    res.json({ ok: true, tools: getTools() });
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`MCP Server running on PORT ${PORT}`));
