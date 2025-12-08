@@ -1,0 +1,192 @@
+import http from 'http';
+import { WebSocketServer } from 'ws';
+
+/**
+ * Minimal MCP-compliant WebSocket server with JSON-RPC 2.0.
+ * Dynamic, framework-free, and reusable.
+ *
+ * Exported API:
+ * - createMcpServer(options)
+ *   Returns { httpServer, wsServer, start(), stop(), registerTool(name, toolDef), getTools() }
+ *
+ * Options:
+ * - name: string (server name)
+ * - version: string (server version)
+ * - host: string (bind host, default '0.0.0.0')
+ * - port: number (bind port, default from process.env.PORT || 8080)
+ * - path: string (WebSocket path, default '/mcp')
+ * - logger: object ({ info, warn, error }) optional
+ */
+export function createMcpServer(options = {}) {
+    const NAME = options.name || 'MCP_GENERIC';
+    const VERSION = options.version || '0.1.0';
+    const HOST = options.host || '0.0.0.0';
+    const PORT = Number(process.env.PORT || options.port || 8080);
+    const PATH = options.path || '/mcp';
+    const logger = options.logger || {
+        info: (...a) => console.log('[INFO ]', ...a),
+        warn: (...a) => console.warn('[WARN ]', ...a),
+        error: (...a) => console.error('[ERROR]', ...a),
+    };
+
+    const SUPPORTED_SUBPROTOCOLS = ['mcp', 'jsonrpc'];
+
+    // Tool registry (dynamic)
+    const tools = new Map();
+
+    // Default example tool: ping
+    registerTool('ping', {
+        description: 'Simple ping tool that returns {status:"ok"}'.
+            replace(/\n/g, ' '),
+        inputSchema: { type: 'object', properties: {}, additionalProperties: true },
+        outputSchema: { type: 'object', properties: { status: { type: 'string' } }, required: ['status'] },
+        call: async () => ({ status: 'ok' }),
+    });
+
+    // JSON-RPC helpers
+    function makeResult(id, result) {
+        return { jsonrpc: '2.0', id, result };
+    }
+    function makeError(id, code, message, data) {
+        const err = { code, message };
+        if (data !== undefined) err.data = data;
+        return { jsonrpc: '2.0', id, error: err };
+    }
+
+    // HTTP server: health on '/', 426 on PATH for non-WS
+    const httpServer = http.createServer((req, res) => {
+        if (req.url === PATH) {
+            res.statusCode = 426; // Upgrade Required
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'WebSocket-only endpoint. Upgrade with ws/wss.' }));
+            return;
+        }
+        if (req.url === '/') {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ name: NAME, version: VERSION, status: 'ok' }));
+            return;
+        }
+        res.statusCode = 404;
+        res.end('Not Found');
+    });
+
+    const wsServer = new WebSocketServer({
+        server: httpServer,
+        path: PATH,
+        handleProtocols: (protocols) => {
+            const requested = Array.from(protocols || []);
+            if (requested.includes('mcp')) return 'mcp';
+            if (requested.includes('jsonrpc')) return 'jsonrpc';
+            return false;
+        },
+    });
+
+    // Register / get tools API
+    function registerTool(name, def) {
+        if (!name || typeof name !== 'string') throw new Error('Tool name must be a string');
+        if (!def || typeof def.call !== 'function') throw new Error('Tool def must have call()');
+        tools.set(name, { name, ...def });
+        return getTools();
+    }
+    function getTools() {
+        return Array.from(tools.values()).map((t) => ({
+            name: t.name,
+            description: t.description || '',
+            inputSchema: t.inputSchema || { type: 'object' },
+            outputSchema: t.outputSchema || { type: 'object' },
+        }));
+    }
+
+    // Connection handler supporting multiple clients
+    wsServer.on('connection', (ws, request) => {
+        logger.info('WS connected', request?.socket?.remoteAddress);
+
+        ws.on('message', async (data) => {
+            let msgStr = data.toString();
+            try {
+                const msg = JSON.parse(msgStr);
+                const { id, method, params } = msg;
+                if (!method || typeof method !== 'string') {
+                    const resp = makeError(id ?? null, -32600, 'Invalid Request: method missing');
+                    ws.send(JSON.stringify(resp));
+                    return;
+                }
+
+                switch (method) {
+                    case 'initialize': {
+                        const result = {
+                            protocolVersion: '2024-11-05',
+                            serverInfo: { name: NAME, version: VERSION },
+                            capabilities: { tools: { listChanged: false } },
+                        };
+                        ws.send(JSON.stringify(makeResult(id, result)));
+                        break;
+                    }
+                    case 'tools/list': {
+                        ws.send(JSON.stringify(makeResult(id, { tools: getTools() })));
+                        break;
+                    }
+                    case 'tools/call': {
+                        const name = params?.name;
+                        const args = params?.arguments;
+                        if (!name || typeof name !== 'string') {
+                            ws.send(JSON.stringify(makeError(id, -32602, 'Invalid params: name is required')));
+                            break;
+                        }
+                        const tool = tools.get(name);
+                        if (!tool) {
+                            ws.send(JSON.stringify(makeError(id, -32601, `Method not found: tool ${name}`)));
+                            break;
+                        }
+                        try {
+                            const result = await tool.call(args || {});
+                            ws.send(JSON.stringify(makeResult(id, result)));
+                        } catch (e) {
+                            logger.error('Tool error', e);
+                            ws.send(JSON.stringify(makeError(id, -32000, 'Tool invocation error')));
+                        }
+                        break;
+                    }
+                    default: {
+                        ws.send(JSON.stringify(makeError(id, -32601, `Method not found: ${method}`)));
+                    }
+                }
+            } catch (e) {
+                logger.error('Invalid JSON', e);
+                ws.send(JSON.stringify(makeError(null, -32700, 'Parse error')));
+            }
+        });
+
+        ws.on('close', () => {
+            logger.info('WS closed');
+        });
+        ws.on('error', (e) => {
+            logger.error('WS error', e);
+        });
+    });
+
+    function start() {
+        return new Promise((resolve, reject) => {
+            httpServer.listen(PORT, HOST, () => {
+                logger.info(`MCP server listening on ws://${HOST}:${PORT}${PATH}`);
+                resolve();
+            });
+            httpServer.on('error', reject);
+        });
+    }
+
+    function stop() {
+        return new Promise((resolve) => {
+            try {
+                wsServer.close(() => {
+                    httpServer.close(() => resolve());
+                });
+            } catch (_) {
+                resolve();
+            }
+        });
+    }
+
+    return { httpServer, wsServer, start, stop, registerTool, getTools };
+}
