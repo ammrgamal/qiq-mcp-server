@@ -46,3 +46,42 @@ Your Cloud Run MCP URL will be:
 If Cloud Build complains about missing Dockerfile, ensure the Dockerfile exists at the repo root (it does now). If your trigger expects a different path, update it accordingly.
 ...
 # qiq-mcp-server
+
+## Cloud Build + Artifact Registry (Quick Setup)
+
+This repo includes a `cloudbuild.yaml` that builds the Docker image and pushes it to Artifact Registry under:
+
+```
+${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:{latest|$COMMIT_SHA}
+```
+
+Default substitutions:
+- `_REGION`: `europe-west1`
+- `_REPOSITORY`: `mcp-server`
+- `_IMAGE`: `mcp-server`
+
+The build config now ensures the Artifact Registry repository exists (creates it if missing) before pushing.
+
+### Trigger configuration
+- Set your Cloud Build trigger to use the config file: `cloudbuild.yaml`.
+- Optionally override substitutions for region/repository/image.
+
+### Manual submit (optional)
+```bash
+gcloud builds submit --config=cloudbuild.yaml \
+	--substitutions=_REGION=europe-west1,_REPOSITORY=mcp-server,_IMAGE=mcp-server
+```
+
+### Permissions
+- Ensure the Cloud Build service account has `roles/artifactregistry.writer` on your repository (or project) if push access fails.
+
+### Deploy to Cloud Run
+```bash
+gcloud run deploy mcp-server \
+	--image europe-west1-docker.pkg.dev/$PROJECT_ID/mcp-server/mcp-server:latest \
+	--region europe-west1 \
+	--allow-unauthenticated \
+	--port 8080
+```
+
+Your MCP URL: `wss://<cloud-run-service-url>/mcp`
