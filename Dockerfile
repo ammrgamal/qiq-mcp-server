@@ -1,17 +1,16 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install production deps
+# Copy manifests first for layer caching
 COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* ./
 RUN npm ci --only=production || npm install --production
 
-# Copy source
+# Copy sources
 COPY . .
 
-# Expose port (Cloud Run uses $PORT, default 8080)
-ENV MCP_HOST=0.0.0.0
-ENV MCP_PORT=8080
+# Cloud Run provides PORT; code falls back to 8080
+ENV NODE_ENV=production
 
-# Start server
-CMD ["node", "scripts/mcp-server.js"]
+# Generic entrypoint (does not assume specific filenames elsewhere)
+CMD ["node", "run.mjs"]

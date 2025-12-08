@@ -1,51 +1,79 @@
-# QIQ MCP Server
+# Generic MCP WebSocket Server (Node.js)
 
-Minimal MCP WebSocket server (JSON-RPC 2.0) for OpenAI Agent Builder, runs locally and on any Node hosting. No Cloudflare required.
+Fully dynamic, framework-free MCP server over WebSocket (JSON-RPC 2.0). No fixed filenames or layouts are required — the module exports a clean API and a tiny runner for convenience.
 
 ## Features
-...
-## Quick Start
-...
-## JSON-RPC Methods
-...
-## Connect from OpenAI Agent (Agent Builder)
-Use the MCP tool in Agent Builder and connect to your server:
-- URL: `wss://<your-domain-or-tunnel>/mcp`
-- Label: QIQ MCP
-- Description: QIQ MCP WebSocket
-- Authentication: None
-- Subprotocol: Client sets `mcp`; server supports `mcp` and `jsonrpc`.
+- MCP handshake via `initialize`
+- Dynamic tools list via `tools/list`
+- Tool invocation via `tools/call`
+- Example tool: `ping` returns `{ status: "ok" }`
+- Supports multiple WebSocket clients
+- Clean module export: `createMcpServer(options)`
 
 ## Local → Public (tunnel)
-### ngrok
-```
-ngrok config add-authtoken <YOUR_TOKEN>
-ngrok http 3001
-```
-MCP URL: `wss://<random>.ngrok-free.dev/mcp`
+## Usage
 
-### localtunnel (no account)
+### Module API
+```js
+import { createMcpServer } from './src/mcp.mjs';
+
+const server = createMcpServer({
+	name: 'MY_MCP',
+	version: '1.0.0',
+	// port is taken from process.env.PORT with fallback to 8080
+});
+
+// Add a dynamic tool at runtime
+server.registerTool('echo', {
+	description: 'Echo text back',
+	inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+	outputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+	call: async ({ text }) => ({ text }),
+});
+
+await server.start();
 ```
-npx localtunnel --port 3001 --subdomain qiqlab
+
+### Local run
+```bash
+npm install
+npm run start
 ```
-MCP URL: `wss://qiqlab.loca.lt/mcp`
+
+Server listens on `ws://0.0.0.0:<PORT>/mcp` using `PORT` env or falls back to 8080.
+
+### Test via MCP CLI
+```bash
+npx @modelcontextprotocol/cli dev --url ws://localhost:8080/mcp --label "Generic MCP" --subprotocol mcp
+```
+You should see `initialize` succeed and `tools/list` include `ping`.
 
 ## Roadmap
-## Deploy to Google Cloud Run
+## Dockerfile (Cloud Run)
 
-Cloud Run expects the container to listen on `$PORT` (default 8080). This repo includes a `Dockerfile` that starts the MCP server and binds to `$PORT` via the `PORT` env.
+This repository includes a generic Dockerfile that:
+- Installs production dependencies
+- Starts the runner `run.mjs`
+- Uses `PORT` from environment (Cloud Run sets it automatically; fallback 8080)
 
-Steps (high-level):
-- Build and push the image to Artifact Registry or GCR.
-- Create a Cloud Run service using that image.
-- Ensure WebSockets are enabled (HTTP/1.1 is supported by Cloud Run) and map traffic to `/mcp`.
+### Build locally
+```bash
+docker build -t generic-mcp:latest .
+docker run -e PORT=8080 -p 8080:8080 generic-mcp:latest
+```
 
-Your Cloud Run MCP URL will be:
-`wss://<your-cloud-run-service-url>/mcp`
+### Deploy to Cloud Run
+```bash
+gcloud run deploy generic-mcp \
+	--image <REGION>-docker.pkg.dev/<PROJECT>/<REPO>/<IMAGE>:latest \
+	--region <REGION> \
+	--allow-unauthenticated \
+	--port 8080
+```
 
-If Cloud Build complains about missing Dockerfile, ensure the Dockerfile exists at the repo root (it does now). If your trigger expects a different path, update it accordingly.
-...
-# qiq-mcp-server
+Notes:
+- Cloud Run supports WebSockets over HTTP/1.1. Use `wss://<service-url>/mcp` in clients.
+- Subprotocol negotiation: client should request `mcp`; server supports `mcp` and `jsonrpc`.
 
 ## Cloud Build + Artifact Registry (Quick Setup)
 
