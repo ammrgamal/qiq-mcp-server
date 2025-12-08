@@ -51,7 +51,16 @@ export function createMcpServer(options = {}) {
     }
 
     // Use noServer mode so the HTTP server can control upgrade routing (Cloud Run safe)
-    const wsServer = new WebSocketServer({ noServer: true });
+    const wsServer = new WebSocketServer({
+        noServer: true,
+        // Negotiate subprotocols: prefer 'mcp', then 'jsonrpc'
+        handleProtocols: (protocols) => {
+            const requested = Array.from(protocols || []);
+            if (requested.includes('mcp')) return 'mcp';
+            if (requested.includes('jsonrpc')) return 'jsonrpc';
+            return false;
+        },
+    });
 
     // Register / get tools API
     function registerTool(name, def) {
