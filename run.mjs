@@ -29,10 +29,29 @@ app.get('/mcp/sse', async (req, res) => {
 });
 
 // Optional HTTP JSON-RPC endpoint to produce SSE-compatible responses
+// CORS preflight for /mcp/http
+app.options('/mcp/http', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(204).end();
+});
+
+// GET handler for /mcp/http → 405 JSON (no HTML)
+app.get('/mcp/http', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(405).json({ error: 'Method not allowed. Use POST.' });
+});
+
+// POST /mcp/http → JSON-RPC over HTTP with CORS
 app.post('/mcp/http', async (req, res) => {
-    const input = req.body;
-    const out = await handleJsonRpc(input);
-    res.status(200).json(out);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    try {
+        const out = await handleJsonRpc(req.body);
+        res.status(200).json(out);
+    } catch {
+        res.status(200).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+    }
 });
 
 // Health
