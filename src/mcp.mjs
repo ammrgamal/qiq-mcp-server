@@ -239,12 +239,16 @@ export function handleJsonRpc(input) {
                     capabilities: { tools: { listChanged: false } },
                 });
             case 'tools/list':
-                return makeResult({ tools: Array.from((function(){return Array.from(tools.values()).map(t=>({
-                    name: t.name,
-                    description: t.description || '',
-                    inputSchema: t.inputSchema || { type: 'object' },
-                    outputSchema: t.outputSchema || { type: 'object' },
-                }))})()) });
+                return makeResult({
+                    tools: Array.from((function () {
+                        return Array.from(tools.values()).map(t => ({
+                            name: t.name,
+                            description: t.description || '',
+                            inputSchema: t.inputSchema || { type: 'object' },
+                            outputSchema: t.outputSchema || { type: 'object' },
+                        }))
+                    })())
+                });
             case 'tools/call': {
                 const name = params?.name;
                 const args = params?.arguments;
