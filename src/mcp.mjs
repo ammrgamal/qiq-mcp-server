@@ -86,11 +86,16 @@ export function createMcpServer(options = {}) {
         return getTools();
     }
     function getTools() {
+        // Return both camelCase and snake_case to maximize client compatibility
         return Array.from(tools.values()).map((t) => ({
             name: t.name,
             description: t.description || '',
+            // camelCase (some clients expect this)
             inputSchema: t.inputSchema || { type: 'object' },
             outputSchema: t.outputSchema || { type: 'object' },
+            // snake_case (Agent Builder currently expects this)
+            input_schema: t.inputSchema || { type: 'object' },
+            output_schema: t.outputSchema || { type: 'object' },
         }));
     }
 
@@ -120,7 +125,8 @@ export function createMcpServer(options = {}) {
                         break;
                     }
                     case 'tools/list': {
-                        ws.send(JSON.stringify(makeResult(id, { tools: getTools() })));
+                        const listed = getTools();
+                        ws.send(JSON.stringify(makeResult(id, { tools: listed })));
                         break;
                     }
                     case 'tools/call': {
