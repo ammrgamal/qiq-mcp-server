@@ -1,0 +1,12 @@
+.vercel
+.env*.local
+# Exclude environment files
+.env
+.env.*
+!.env.example
+# Vercel CLI generated env
+.env.vercel
+.env.local
+.env.server
+# Node modules
+node_modules/
