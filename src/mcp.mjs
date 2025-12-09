@@ -1,4 +1,5 @@
 // Minimal MCP core for HTTP/SSE transports (no WebSocket)
+import Typesense from 'typesense';
 
 // In-memory tool registry
 const tools = new Map();
@@ -72,3 +73,137 @@ export function handleJsonRpc(input) {
     }
 }
 // End of minimal MCP core
+
+// --- Built-in tools: Typesense search and QIQ scoring ---
+// Environment-driven configuration so the server can run without hardcoding
+const TS_HOST = process.env.TYPESENSE_HOST;
+const TS_PORT = process.env.TYPESENSE_PORT ? Number(process.env.TYPESENSE_PORT) : undefined;
+const TS_PROTOCOL = process.env.TYPESENSE_PROTOCOL; // http|https
+const TS_API_KEY = process.env.TYPESENSE_SEARCH_ONLY_KEY || process.env.TYPESENSE_API_KEY;
+const TS_COLLECTION = process.env.TYPESENSE_COLLECTION;
+
+let tsClient = null;
+try {
+    if (TS_HOST && TS_PORT && TS_PROTOCOL && TS_API_KEY) {
+        tsClient = new Typesense.Client({
+            nodes: [{ host: TS_HOST, port: TS_PORT, protocol: TS_PROTOCOL }],
+            apiKey: TS_API_KEY,
+            connectionTimeoutSeconds: 5,
+        });
+    }
+} catch {
+    tsClient = null;
+}
+
+const productSchema = {
+    type: 'object',
+    properties: {
+        sku: { type: 'string' },
+        name: { type: 'string' },
+        brand: { type: 'string' },
+        price: { type: 'number' },
+        quantity: { type: 'number' },
+        score: { type: 'number' }
+    },
+    required: ['sku', 'name', 'brand', 'price', 'quantity'],
+    additionalProperties: true,
+};
+
+registerTool('typesense_search', {
+    description: 'Search products from Typesense and return normalized product list.',
+    inputSchema: {
+        type: 'object',
+        properties: {
+            category: { type: 'string' },
+            keywords: { type: 'string' },
+            quantity: { type: ['number', 'null'] },
+            duration_years: { type: ['number', 'null'] },
+        },
+        required: ['category', 'keywords'],
+        additionalProperties: false,
+    },
+    outputSchema: {
+        type: 'object',
+        properties: { products: { type: 'array', items: productSchema } },
+        required: ['products'],
+        additionalProperties: false,
+    },
+    call: async ({ category, keywords, quantity = null }) => {
+        // If Typesense is not configured, return deterministic mock data
+        const qty = typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+        if (!tsClient || !TS_COLLECTION) {
+            return {
+                products: [
+                    { sku: 'MOCK-001', name: `${category} basic - ${keywords}`, brand: 'Generic', price: 10, quantity: qty },
+                    { sku: 'MOCK-002', name: `${category} standard - ${keywords}`, brand: 'Generic', price: 20, quantity: qty },
+                    { sku: 'MOCK-003', name: `${category} pro - ${keywords}`, brand: 'Generic', price: 30, quantity: qty },
+                ],
+            };
+        }
+
+        try {
+            const searchParams = {
+                q: keywords || '*',
+                query_by: 'name,description,brand,category',
+                per_page: 25,
+            };
+            // Best-effort category filtering if collection supports it
+            if (category) searchParams.filter_by = `category:=${JSON.stringify(category)}`;
+            const result = await tsClient.collections(TS_COLLECTION).documents().search(searchParams);
+            const products = (result.hits || []).map((hit, idx) => {
+                const doc = hit.document || {};
+                const sku = doc.sku || doc.id || `TS-${idx + 1}`;
+                const name = doc.name || doc.title || `${category} item`;
+                const brand = doc.brand || doc.vendor || 'Unknown';
+                const price = typeof doc.price === 'number' ? doc.price : Number(doc.price) || 0;
+                return { sku, name, brand, price, quantity: qty };
+            });
+            return { products };
+        } catch {
+            // Fall back to mock data on failure
+            return {
+                products: [
+                    { sku: 'FALLBACK-001', name: `${category} fallback - ${keywords}`, brand: 'Generic', price: 15, quantity: qty },
+                ],
+            };
+        }
+    },
+});
+
+registerTool('qiq_scoring', {
+    description: 'Score and rank products for QIQ procurement logic.',
+    inputSchema: {
+        type: 'object',
+        properties: {
+            products: { type: 'array', items: productSchema },
+            context: {
+                type: 'object',
+                properties: {
+                    solutionType: { type: 'string' },
+                    seats: { type: 'number' },
+                    termYears: { type: 'number' },
+                },
+                additionalProperties: true,
+            },
+        },
+        required: ['products'],
+        additionalProperties: false,
+    },
+    outputSchema: {
+        type: 'object',
+        properties: { products: { type: 'array', items: productSchema } },
+        required: ['products'],
+        additionalProperties: false,
+    },
+    call: async ({ products = [], context = {} } = {}) => {
+        const scored = (Array.isArray(products) ? products : []).map((p) => {
+            const price = typeof p.price === 'number' ? p.price : Number(p.price) || 0;
+            // Simple, transparent baseline: lower price → higher score
+            const score = price > 0 ? 1 / price : 0;
+            return { ...p, price, score };
+        });
+        scored.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        return { products: scored };
+    },
+});
+
