@@ -17,6 +17,11 @@ function authGuard(req, res, next) {
 
 const app = express();
 app.use(express.json({ type: 'application/json' }));
+// Basic request log for debugging
+app.use((req, _res, next) => {
+    console.log(`[REQ] ${req.method} ${req.path}`);
+    next();
+});
 
 // GET /mcp → 426 Upgrade Required (per spec)
 app.get('/mcp', authGuard, (_req, res) => {
@@ -41,12 +46,31 @@ app.get('/mcp/sse', authGuard, async (req, res) => {
     req.on('close', () => clearInterval(interval));
 });
 
+// CORS preflight for /mcp/sse POST
+app.options('/mcp/sse', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Access-Token');
+    res.status(204).end();
+});
+
+// Some clients POST to /mcp/sse to send JSON-RPC requests
+app.post('/mcp/sse', authGuard, async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    try {
+        const out = await handleJsonRpc(req.body);
+        res.status(200).json(out);
+    } catch {
+        res.status(200).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+    }
+});
+
 // Optional HTTP JSON-RPC endpoint to produce SSE-compatible responses
 // CORS preflight for /mcp/http
 app.options('/mcp/http', (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Access-Token');
     res.status(204).end();
 });
 
