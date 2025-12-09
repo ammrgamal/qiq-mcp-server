@@ -157,9 +157,9 @@ registerTool('typesense_search', {
                     const strFields = (schema?.fields || [])
                         .filter((f) => typeof f?.name === 'string' && String(f.type || '').startsWith('string'))
                         .map((f) => f.name);
-                    cachedQueryBy = (strFields.length ? strFields : ['name','description','brand','category']).join(',');
+                    cachedQueryBy = (strFields.length ? strFields : ['name', 'description', 'brand', 'category']).join(',');
                 } catch {
-                    cachedQueryBy = ['name','description','brand','category'].join(',');
+                    cachedQueryBy = ['name', 'description', 'brand', 'category'].join(',');
                 }
             }
 
@@ -240,6 +240,46 @@ registerTool('qiq_scoring', {
         });
         scored.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
         return { products: scored };
+    },
+});
+
+// Health/diagnostics tool for Typesense connectivity
+registerTool('typesense_health', {
+    description: 'Report Typesense connectivity and collection schema fields.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    outputSchema: {
+        type: 'object',
+        properties: {
+            connected: { type: 'boolean' },
+            host: { type: 'string' },
+            protocol: { type: 'string' },
+            port: { type: 'number' },
+            collection: { type: 'string' },
+            fields: { type: 'array', items: { type: 'string' } },
+            error: { type: 'string' }
+        },
+        required: ['connected', 'host', 'protocol', 'port', 'collection'],
+        additionalProperties: false,
+    },
+    call: async () => {
+        const base = {
+            connected: false,
+            host: TS_HOST || '',
+            protocol: TS_PROTOCOL || '',
+            port: typeof TS_PORT === 'number' ? TS_PORT : 0,
+            collection: TS_COLLECTION || '',
+            fields: [],
+        };
+        try {
+            if (!tsClient) return { ...base, error: 'Client not initialized' };
+            // Prefer health endpoint if available
+            try { await tsClient.health.retrieve(); } catch { /* ignore */ }
+            const schema = await tsClient.collections(TS_COLLECTION).retrieve();
+            const fields = (schema?.fields || []).map((f) => f?.name).filter(Boolean);
+            return { ...base, connected: true, fields };
+        } catch (e) {
+            return { ...base, error: (e && e.message) ? e.message : 'Unknown error' };
+        }
     },
 });
 
