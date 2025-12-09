@@ -1,14 +1,16 @@
-# Generic MCP WebSocket Server (Node.js)
+# QuickItQuote MCP HTTP/SSE Server
 
-Fully dynamic, framework-free MCP server over WebSocket (JSON-RPC 2.0). No fixed filenames or layouts are required — the module exports a clean API and a tiny runner for convenience.
+Minimal MCP server over HTTP + Server‑Sent Events (SSE) with token auth and CORS for OpenAI Agent Builder. Includes built‑in tools for Typesense search and QIQ scoring.
 
 ## Features
-- MCP handshake via `initialize`
-- Dynamic tools list via `tools/list`
-- Tool invocation via `tools/call`
-- Example tool: `ping` returns `{ status: "ok" }`
-- Supports multiple WebSocket clients
-- Clean module export: `createMcpServer(options)`
+- HTTP JSON‑RPC at `POST /mcp/sse` and SSE stream at `GET /mcp/sse`
+- Handshake via `initialize`
+- `tools/list` and `tools/call` supported
+- Built‑in tools:
+	- `ping` – sanity check
+	- `typesense_search` – search Typesense and normalize product results
+	- `qiq_scoring` – simple, transparent ranking (price‑based baseline)
+- Token auth via `Authorization: Bearer <MCP_TOKEN>`
 
 ## Local → Public (tunnel)
 ## Usage
@@ -40,18 +42,30 @@ npm install
 npm run start
 ```
 
-Server listens on `ws://0.0.0.0:<PORT>/mcp` using `PORT` env or falls back to 8080.
+Server listens on `http://0.0.0.0:<PORT>` (default 8080).
 
-### Test via MCP CLI
-```bash
-npx @modelcontextprotocol/cli dev --url ws://localhost:8080/mcp --label "Generic MCP" --subprotocol mcp
-```
-You should see `initialize` succeed and `tools/list` include `ping`.
+Endpoints:
+- `GET /mcp/sse` → SSE stream (sends `initialize` and keep‑alive pings)
+- `POST /mcp/sse` → JSON‑RPC requests (e.g., `tools/list`, `tools/call`)
+- `GET /mcp/info` → health/tools (requires token if configured)
 
-## Roadmap
-## Dockerfile (Cloud Run)
+Auth: set `MCP_TOKEN` then pass it via `Authorization: Bearer <token>`.
 
-This repository includes a generic Dockerfile that:
+Environment variables: see `.env.example`.
+
+### Test endpoints
+- List tools
+	- `POST /mcp/sse` with body `{ "jsonrpc":"2.0","id":1,"method":"tools/list","params":{} }`
+- Call Typesense search
+	- `POST /mcp/sse` with body
+		`{ "jsonrpc":"2.0","id":2,"method":"tools/call","params":{ "name":"typesense_search", "arguments": { "category":"edr","keywords":"license", "quantity":100 } } }`
+- Score results
+	- `POST /mcp/sse` with body
+		`{ "jsonrpc":"2.0","id":3,"method":"tools/call","params":{ "name":"qiq_scoring", "arguments": { "products":[...], "context":{ "solutionType":"EDR","seats":100,"termYears":1 } } } }`
+
+## Deployment
+
+This repository includes a Dockerfile that:
 - Installs production dependencies
 - Starts the runner `run.mjs`
 - Uses `PORT` from environment (Cloud Run sets it automatically; fallback 8080)
@@ -112,4 +126,4 @@ gcloud run deploy mcp-server \
 	--port 8080
 ```
 
-Your MCP URL: `wss://<cloud-run-service-url>/mcp`
+For a permanent HTTPS domain, you can front the service with Cloudflare Tunnel and use the `https://<domain>/mcp/sse` URL in OpenAI Agent Builder.
