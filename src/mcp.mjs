@@ -85,8 +85,9 @@ const TS_PORT = (() => {
     if (TS_PROTOCOL === 'http') return 80;
     return undefined;
 })();
+// Prefer search-only key, then general API key, then admin key; pick the first non-empty trimmed value
 const TS_API_KEY = [process.env.TYPESENSE_SEARCH_ONLY_KEY, process.env.TYPESENSE_API_KEY, process.env.TYPESENSE_ADMIN_API_KEY]
-    .find((v) => v && String(v).trim() !== undefined);
+    .find((v) => typeof v === 'string' && v.trim().length > 0);
 const TS_API_KEY_TRIMMED = TS_API_KEY ? String(TS_API_KEY).trim() : undefined;
 const TS_COLLECTION = process.env.TYPESENSE_COLLECTION;
 
@@ -156,16 +157,19 @@ registerTool('typesense_search', {
             if (!cachedQueryBy) {
                 const envQueryBy = process.env.TYPESENSE_QUERY_BY?.trim();
                 if (envQueryBy) {
+                    // Honor explicit override and skip schema discovery
                     cachedQueryBy = envQueryBy;
-                }
-                try {
-                    const schema = await tsClient.collections(TS_COLLECTION).retrieve();
-                    const strFields = (schema?.fields || [])
-                        .filter((f) => typeof f?.name === 'string' && String(f.type || '').startsWith('string'))
-                        .map((f) => f.name);
-                    cachedQueryBy = (strFields.length ? strFields : ['name', 'description', 'brand', 'category']).join(',');
-                } catch {
-                    cachedQueryBy = ['name', 'description', 'brand', 'category'].join(',');
+                } else {
+                    // Try to discover string fields from schema, then fallback to sensible defaults
+                    try {
+                        const schema = await tsClient.collections(TS_COLLECTION).retrieve();
+                        const strFields = (schema?.fields || [])
+                            .filter((f) => typeof f?.name === 'string' && String(f.type || '').startsWith('string'))
+                            .map((f) => f.name);
+                        cachedQueryBy = (strFields.length ? strFields : ['name', 'description', 'brand', 'category']).join(',');
+                    } catch {
+                        cachedQueryBy = ['name', 'description', 'brand', 'category'].join(',');
+                    }
                 }
             }
 
@@ -185,10 +189,11 @@ registerTool('typesense_search', {
             try {
                 result = await attempt(cachedQueryBy);
             } catch {
+                // Fallbacks: try a common single field, then a conservative default set
                 try {
                     result = await attempt('name');
                 } catch {
-                    result = await attempt('*'); // may still fail depending on schema
+                    result = await attempt('name,description,brand,category');
                 }
             }
 
@@ -278,21 +283,28 @@ registerTool('typesense_health', {
         };
         try {
             if (!tsClient) return { ...base, error: 'Client not initialized' };
+
             // Attempt a lightweight search which should succeed with search-only key
             let connected = false;
-            try {
-                await tsClient.collections(TS_COLLECTION).documents().search({ q: '*', query_by: 'name', per_page: 1 });
-                connected = true;
-            } catch {
-                // fall through; try health and schema
-            }
             let fields = [];
             try {
-                await tsClient.health.retrieve();
-                const schema = await tsClient.collections(TS_COLLECTION).retrieve();
-                fields = (schema?.fields || []).map((f) => f?.name).filter(Boolean);
+                const qb = cachedQueryBy || process.env.TYPESENSE_QUERY_BY?.trim() || 'name';
+                await tsClient.collections(TS_COLLECTION).documents().search({ q: '*', query_by: qb, per_page: 1 });
                 connected = true;
-            } catch { /* ignore */ }
+                // If we don't have schema access, at least report the query_by we used
+                fields = qb.split(',').map(s => s.trim()).filter(Boolean);
+            } catch (searchErr) {
+                // Try health and schema (may require non-search-only keys)
+                try {
+                    await tsClient.health.retrieve();
+                    const schema = await tsClient.collections(TS_COLLECTION).retrieve();
+                    fields = (schema?.fields || []).map((f) => f?.name).filter(Boolean);
+                    connected = true;
+                } catch (schemaErr) {
+                    const msg = (searchErr && searchErr.message) ? searchErr.message : (schemaErr && schemaErr.message) ? schemaErr.message : undefined;
+                    return { ...base, connected, fields, error: msg };
+                }
+            }
             return { ...base, connected, fields };
         } catch (e) {
             return { ...base, error: (e && e.message) ? e.message : 'Unknown error' };
