@@ -11,6 +11,7 @@ Minimal MCP server over HTTP + Server‑Sent Events (SSE) with token auth and CO
 	- `typesense_search` – search Typesense and normalize product results
 	- `qiq_scoring` – simple, transparent ranking (price‑based baseline)
 - Token auth via `Authorization: Bearer <MCP_TOKEN>`
+ - Typesense integration with env-driven config and graceful fallbacks
 
 ## Local → Public (tunnel)
 ## Usage
@@ -127,3 +128,19 @@ gcloud run deploy mcp-server \
 ```
 
 For a permanent HTTPS domain, you can front the service with Cloudflare Tunnel and use the `https://<domain>/mcp/sse` URL in OpenAI Agent Builder.
+
+## Typesense configuration
+
+The server supports a Typesense-backed search tool `typesense_search`. Configure via environment variables:
+
+- `TYPESENSE_HOST`: e.g., `xxxxx-1.a1.typesense.net`
+- `TYPESENSE_PROTOCOL`: `https` or `http` (defaults imply port 443/80 if `TYPESENSE_PORT` is unset)
+- `TYPESENSE_PORT`: typically `443` for `https`
+- Keys (set ONE; first non-empty trimmed value is used):
+	- `TYPESENSE_SEARCH_ONLY_KEY` (recommended in production for read-only search)
+	- `TYPESENSE_API_KEY`
+	- `TYPESENSE_ADMIN_API_KEY`
+- `TYPESENSE_COLLECTION`: e.g., `quickitquote_products`
+- `TYPESENSE_QUERY_BY`: optional, comma-separated list of string fields to search by (e.g., `name,description,brand,category`). If omitted, the server attempts to retrieve the collection schema to discover string fields; otherwise uses sensible defaults.
+
+Diagnostics: call `typesense_health` via JSON-RPC to verify connectivity and see fields used. With search-only keys, schema retrieval may not be permitted; in that case the tool reports the `query_by` fields it used.
