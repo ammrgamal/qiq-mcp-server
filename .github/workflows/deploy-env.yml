@@ -29,6 +29,12 @@ jobs:
             echo "Provide either SERVER_SSH_KEY or SERVER_PASSWORD secrets" && exit 1
           fi
 
+      - name: Detect auth method
+        id: auth
+        run: |
+          if [ -n "${{ secrets.SERVER_SSH_KEY }}" ]; then echo "has_ssh_key=true" >> $GITHUB_OUTPUT; else echo "has_ssh_key=false" >> $GITHUB_OUTPUT; fi
+          if [ -n "${{ secrets.SERVER_PASSWORD }}" ]; then echo "has_password=true" >> $GITHUB_OUTPUT; else echo "has_password=false" >> $GITHUB_OUTPUT; fi
+
       - name: Set variables
         id: vars
         run: |
@@ -52,36 +58,40 @@ jobs:
           echo "env_file=.env.rendered" >> $GITHUB_OUTPUT
 
       - name: Write SSH key (if provided)
-        if: ${{ secrets.SERVER_SSH_KEY != '' }}
+        if: ${{ steps.auth.outputs.has_ssh_key == 'true' }}
         run: |
           echo "${{ secrets.SERVER_SSH_KEY }}" > key.pem
           chmod 600 key.pem
 
       - name: Install sshpass (for password auth)
-        if: ${{ secrets.SERVER_PASSWORD != '' }}
+        if: ${{ steps.auth.outputs.has_password == 'true' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y sshpass
 
       - name: Upload env via SSH key
-        if: ${{ secrets.SERVER_SSH_KEY != '' }}
+        if: ${{ steps.auth.outputs.has_ssh_key == 'true' }}
         run: |
           scp -i key.pem -o StrictHostKeyChecking=no ${{ steps.vars.outputs.env_file }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/qiq-mcp-server/.env
 
       - name: Upload env via password
-        if: ${{ secrets.SERVER_PASSWORD != '' }}
+        if: ${{ steps.auth.outputs.has_password == 'true' }}
         run: |
-          sshpass -p "${{ secrets.SERVER_PASSWORD }}" scp -o StrictHostKeyChecking=no ${{ steps.vars.outputs.env_file }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/qiq-mcp-server/.env
+          sshpass -p "${{ secrets.SERVER_PASSWORD }}" scp -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no ${{ steps.vars.outputs.env_file }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/qiq-mcp-server/.env || true
+          # Fallback to ubuntu user if root is disabled
+          sshpass -p "${{ secrets.SERVER_PASSWORD }}" scp -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no ${{ steps.vars.outputs.env_file }} ubuntu@${{ secrets.SERVER_HOST }}:/opt/qiq-mcp-server/.env || true
 
       - name: Restart service via SSH key
-        if: ${{ secrets.SERVER_SSH_KEY != '' }}
+        if: ${{ steps.auth.outputs.has_ssh_key == 'true' }}
         run: |
           ssh -i key.pem -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "sudo systemctl restart qiq-mcp-server && sudo systemctl status qiq-mcp-server --no-pager -l || true"
 
       - name: Restart service via password
-        if: ${{ secrets.SERVER_PASSWORD != '' }}
+        if: ${{ steps.auth.outputs.has_password == 'true' }}
         run: |
-          sshpass -p "${{ secrets.SERVER_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "sudo systemctl restart qiq-mcp-server && sudo systemctl status qiq-mcp-server --no-pager -l || true"
+          sshpass -p "${{ secrets.SERVER_PASSWORD }}" ssh -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "sudo systemctl restart qiq-mcp-server && sudo systemctl status qiq-mcp-server --no-pager -l || true" || true
+          # Fallback to ubuntu user if root is disabled
+          sshpass -p "${{ secrets.SERVER_PASSWORD }}" ssh -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no ubuntu@${{ secrets.SERVER_HOST }} "sudo systemctl restart qiq-mcp-server && sudo systemctl status qiq-mcp-server --no-pager -l || true" || true
 
       - name: Verify MCP info
         run: |
