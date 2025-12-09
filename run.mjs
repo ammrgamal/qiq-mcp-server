@@ -1,22 +1,35 @@
+import 'dotenv/config';
 import express from 'express';
 import { getTools, handleJsonRpc } from './src/mcp.mjs';
 
 const PORT = Number(process.env.PORT || 8080);
+const REQUIRED_TOKEN = process.env.MCP_TOKEN?.trim();
+
+function authGuard(req, res, next) {
+    if (!REQUIRED_TOKEN) return next(); // no auth configured
+    const hdr = req.headers['authorization'] || '';
+    const bearer = hdr.startsWith('Bearer ') ? hdr.slice(7) : undefined;
+    const token = bearer || req.query.token || req.headers['x-access-token'];
+    if (token === REQUIRED_TOKEN) return next();
+    res.setHeader('WWW-Authenticate', 'Bearer');
+    return res.status(401).json({ error: 'Unauthorized' });
+}
 
 const app = express();
 app.use(express.json({ type: 'application/json' }));
 
 // GET /mcp → 426 Upgrade Required (per spec)
-app.get('/mcp', (_req, res) => {
+app.get('/mcp', authGuard, (_req, res) => {
     res.status(426).json({ error: 'Upgrade Required' });
 });
 
 // SSE endpoint – send initial initialize message and keep the stream alive
-app.get('/mcp/sse', async (req, res) => {
+app.get('/mcp/sse', authGuard, async (req, res) => {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
     });
     const init = await handleJsonRpc({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} });
     res.write('event: message\n');
@@ -38,13 +51,13 @@ app.options('/mcp/http', (req, res) => {
 });
 
 // GET handler for /mcp/http → 405 JSON (no HTML)
-app.get('/mcp/http', (req, res) => {
+app.get('/mcp/http', authGuard, (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.status(405).json({ error: 'Method not allowed. Use POST.' });
 });
 
 // POST /mcp/http → JSON-RPC over HTTP with CORS
-app.post('/mcp/http', async (req, res) => {
+app.post('/mcp/http', authGuard, async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try {
         const out = await handleJsonRpc(req.body);
@@ -60,7 +73,7 @@ app.get('/', (_req, res) => {
 });
 
 // Agent Builder compatibility: return tools list
-app.get('/mcp/info', (_req, res) => {
+app.get('/mcp/info', authGuard, (_req, res) => {
     res.json({ ok: true, tools: getTools() });
 });
 
