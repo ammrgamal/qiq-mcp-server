@@ -101,6 +101,21 @@ jobs:
         run: |
           curl -s https://mcp.quickitquote.com/mcp/info -H "Authorization: Bearer ${{ secrets.MCP_TOKEN }}" || true
 
+      - name: Apply runtime Typesense config
+        run: |
+          curl -s -X POST https://mcp.quickitquote.com/mcp/sse \
+            -H "Authorization: Bearer ${{ secrets.MCP_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"name":"typesense_config_set","arguments":{
+              "host":"${{ secrets.TYPESENSE_HOST }}",
+              "protocol":"${{ secrets.TYPESENSE_PROTOCOL }}",
+              "port":${{ secrets.TYPESENSE_PORT }},
+              "apiKey":"${{ secrets.TYPESENSE_SEARCH_ONLY_KEY }}",
+              "collection":"${{ secrets.TYPESENSE_COLLECTION }}",
+              "query_by":"${{ secrets.TYPESENSE_QUERY_BY }}",
+              "query_by_weights":"${{ secrets.TYPESENSE_QUERY_BY_WEIGHTS }}"
+            }}}' || true
+
       - name: Verify Typesense health
         run: |
           curl -s -X POST https://mcp.quickitquote.com/mcp/sse \
