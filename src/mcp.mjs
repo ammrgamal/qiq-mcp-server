@@ -421,3 +421,63 @@ registerTool('typesense_health', {
     },
 });
 
+// Cheap capability probe: does the configured key have documents:search on the target collection?
+registerTool('typesense_check_permissions', {
+    description: 'Verify that the configured Typesense key can perform documents:search against the configured collection.',
+    inputSchema: {
+        type: 'object',
+        properties: {
+            collection: { type: 'string' },
+            query_by: { type: 'string' },
+        },
+        additionalProperties: false,
+    },
+    outputSchema: {
+        type: 'object',
+        properties: {
+            canSearch: { type: 'boolean' },
+            status: { type: 'string' },
+            host: { type: 'string' },
+            protocol: { type: 'string' },
+            port: { type: 'number' },
+            collection: { type: 'string' },
+            keyLength: { type: 'number' },
+            error: { type: 'string' },
+        },
+        required: ['canSearch', 'status', 'host', 'protocol', 'port', 'collection'],
+        additionalProperties: false,
+    },
+    call: async ({ collection, query_by } = {}) => {
+        const meta = {
+            host: TS_HOST || '',
+            protocol: TS_PROTOCOL || '',
+            port: typeof TS_PORT === 'number' ? TS_PORT : 0,
+            collection: sanitize(collection) || TS_COLLECTION || '',
+            keyLength: TS_API_KEY_TRIMMED?.length || 0,
+        };
+
+        if (!tsClient) return { ...meta, canSearch: false, status: 'not-initialized', error: 'Client not initialized' };
+        if (!meta.collection) return { ...meta, canSearch: false, status: 'no-collection', error: 'No collection configured' };
+
+        const qb = sanitize(query_by) || cachedQueryBy || sanitize(process.env.TYPESENSE_QUERY_BY) || 'name';
+        try {
+            const res = await tsClient
+                .collections(meta.collection)
+                .documents()
+                .search({ q: '*', query_by: qb, per_page: 1 });
+            const hits = Array.isArray(res?.hits) ? res.hits.length : 0;
+            return { ...meta, canSearch: true, status: `ok:hits=${hits}`, error: '' };
+        } catch (e) {
+            const msg = e?.message || String(e);
+            // Typesense Node errors often include httpStatus
+            const httpStatus = e?.httpStatus || e?.status || undefined;
+            let status = 'error';
+            if (httpStatus === 401) status = 'unauthorized';
+            else if (httpStatus === 403) status = 'forbidden';
+            else if (httpStatus === 404) status = 'collection-not-found';
+            else if (httpStatus) status = `http-${httpStatus}`;
+            return { ...meta, canSearch: false, status, error: msg };
+        }
+    },
+});
+

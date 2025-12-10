@@ -30,6 +30,8 @@ Minimal MCP server over HTTP + Server‑Sent Events (SSE) with token auth and CO
 	- `ping` – sanity check
 	- `typesense_search` – search Typesense and normalize product results
 	- `qiq_scoring` – simple, transparent ranking (price‑based baseline)
+	- `typesense_health` – connectivity diagnostics
+	- `typesense_check_permissions` – cheap probe to confirm the configured key can perform `documents:search`
 - Token auth via `Authorization: Bearer <MCP_TOKEN>`
  - Typesense integration with env-driven config and graceful fallbacks
 
@@ -164,3 +166,11 @@ The server supports a Typesense-backed search tool `typesense_search`. Configure
 - `TYPESENSE_QUERY_BY`: optional, comma-separated list of string fields to search by (e.g., `name,description,brand,category`). If omitted, the server attempts to retrieve the collection schema to discover string fields; otherwise uses sensible defaults.
 
 Diagnostics: call `typesense_health` via JSON-RPC to verify connectivity and see fields used. With search-only keys, schema retrieval may not be permitted; in that case the tool reports or uses the `query_by` fields provided via environment.
+
+### Create a search‑only key
+See `Docs/Typesense-SearchOnly-Key.md` for curl and Node.js snippets to mint a least‑privilege key:
+- actions: `["documents:search"]`
+- collections: `["quickitquote_products"]`
+
+### MCP I/O contract and Agent Builder wiring
+`Docs/MCP-IO-Contract.md` documents the exact input shape (`category`, `keywords`, `quantity`, `duration_years`) and the outputs (`{ products: [...] }`), plus example pre‑/post‑MCP nodes in OpenAI Agent Builder.
