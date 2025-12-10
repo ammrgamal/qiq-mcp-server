@@ -190,8 +190,9 @@ registerTool('typesense_search', {
             }
 
             let result;
+            const qString = Array.isArray(keywords) ? keywords.join(' ') : (keywords && String(keywords).trim() ? String(keywords) : '*');
             const baseParams = {
-                q: keywords && String(keywords).trim() ? String(keywords) : '*',
+                q: qString,
                 per_page: 25,
             };
 
@@ -206,20 +207,24 @@ registerTool('typesense_search', {
                 return tsClient.collections(TS_COLLECTION).documents().search(params);
             };
 
+            // If qString looks like an exact identifier (e.g., KL4066IAVFS), prioritize identifier fields
+            const looksLikeId = /[A-Za-z]{2,}\d{2,}|\d{3,}[A-Za-z]{2,}/.test(qString);
+            const idFirst = 'mpn_normalized,object_id,name,sku,brand,category';
+
             try {
-                result = await attempt(cachedQueryBy);
+                result = await attempt(looksLikeId ? idFirst : cachedQueryBy);
             } catch {
                 // Fallbacks: try a common single field, then a conservative default set
                 try {
                     result = await attempt('name');
                 } catch {
-                    result = await attempt('name,description,brand,category');
+                    result = await attempt('mpn_normalized,object_id,name,sku,brand,category');
                 }
             }
 
             const products = (result.hits || []).map((hit, idx) => {
                 const doc = hit.document || {};
-                const sku = doc.sku || doc.id || `TS-${idx + 1}`;
+                const sku = doc.sku || doc.mpn_normalized || doc.object_id || doc.id || `TS-${idx + 1}`;
                 const name = doc.name || doc.title || `${category} item`;
                 const brand = doc.brand || doc.vendor || 'Unknown';
                 const price = typeof doc.price === 'number' ? doc.price : Number(doc.price) || 0;
