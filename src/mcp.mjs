@@ -387,11 +387,14 @@ registerTool('typesense_health', {
             let fields = [];
             try {
                 const qb = cachedQueryBy || sanitize(process.env.TYPESENSE_QUERY_BY) || 'name';
-                await tsClient.collections(TS_COLLECTION).documents().search({ q: '*', query_by: qb, per_page: 1 });
+                console.log('[TS_HEALTH] Attempting search with query_by:', qb);
+                const result = await tsClient.collections(TS_COLLECTION).documents().search({ q: '*', query_by: qb, per_page: 1 });
+                console.log('[TS_HEALTH] Search OK, hits:', result?.hits?.length || 0);
                 connected = true;
                 // If we don't have schema access, at least report the query_by we used
                 fields = qb.split(',').map(s => s.trim()).filter(Boolean);
             } catch (searchErr) {
+                console.log('[TS_HEALTH] Search failed:', searchErr?.message || searchErr);
                 // Try health and schema (may require non-search-only keys)
                 try {
                     await tsClient.health.retrieve();
@@ -399,12 +402,14 @@ registerTool('typesense_health', {
                     fields = (schema?.fields || []).map((f) => f?.name).filter(Boolean);
                     connected = true;
                 } catch (schemaErr) {
+                    console.log('[TS_HEALTH] Health/schema also failed:', schemaErr?.message || schemaErr);
                     const msg = (searchErr && searchErr.message) ? searchErr.message : (schemaErr && schemaErr.message) ? schemaErr.message : undefined;
                     return { ...base, connected, fields, error: msg };
                 }
             }
             return { ...base, connected, fields };
         } catch (e) {
+            console.log('[TS_HEALTH] Outer catch:', e?.message || e);
             return { ...base, error: (e && e.message) ? e.message : 'Unknown error' };
         }
     },
