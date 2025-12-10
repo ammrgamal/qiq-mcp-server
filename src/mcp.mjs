@@ -161,7 +161,9 @@ registerTool('typesense_search', {
     call: async ({ category, keywords, quantity = null }) => {
         // If Typesense is not configured, return deterministic mock data
         const qty = typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+        console.log('[TS_SEARCH] tsClient?', !!tsClient, 'TS_COLLECTION?', TS_COLLECTION, 'TS_API_KEY_TRIMMED length?', TS_API_KEY_TRIMMED?.length);
         if (!tsClient || !TS_COLLECTION) {
+            console.log('[TS_SEARCH] Returning MOCK (client or collection missing)');
             return {
                 products: [
                     { sku: 'MOCK-001', name: `${category} basic - ${keywords}`, brand: 'Generic', price: 10, quantity: qty },
@@ -216,11 +218,13 @@ registerTool('typesense_search', {
 
             try {
                 result = await attempt(looksLikeId ? idFirst : cachedQueryBy);
-            } catch {
+            } catch (err1) {
+                console.log('[TS_SEARCH] Primary attempt failed:', err1?.message);
                 // Fallbacks: try a common single field, then a conservative default set
                 try {
                     result = await attempt('name');
-                } catch {
+                } catch (err2) {
+                    console.log('[TS_SEARCH] Fallback name failed:', err2?.message);
                     result = await attempt('mpn_normalized,object_id,name,sku,brand,category');
                 }
             }
@@ -233,9 +237,11 @@ registerTool('typesense_search', {
                 const price = typeof doc.price === 'number' ? doc.price : Number(doc.price) || 0;
                 return { sku, name, brand, price, quantity: qty };
             });
+            console.log('[TS_SEARCH] Success:', products.length, 'products');
             return { products };
-        } catch {
+        } catch (outerErr) {
             // Fall back to mock data on failure
+            console.log('[TS_SEARCH] Outer catch (fallback):', outerErr?.message);
             return {
                 products: [
                     { sku: 'FALLBACK-001', name: `${category} fallback - ${keywords}`, brand: 'Generic', price: 15, quantity: qty },
