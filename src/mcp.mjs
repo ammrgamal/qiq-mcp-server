@@ -155,10 +155,29 @@ registerTool('typesense_search', {
         required: ['category', 'keywords'],
         additionalProperties: false,
     },
+    // Return a CallToolResult per OpenAI MCP: { content: [ { type: 'json', json: { products: [...] } } ] }
     outputSchema: {
         type: 'object',
-        properties: { products: { type: 'array', items: productSchema } },
-        required: ['products'],
+        properties: {
+            content: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        type: { type: 'string' },
+                        json: {
+                            type: 'object',
+                            properties: { products: { type: 'array', items: productSchema } },
+                            required: ['products'],
+                            additionalProperties: false,
+                        },
+                    },
+                    required: ['type', 'json'],
+                    additionalProperties: false,
+                },
+            },
+        },
+        required: ['content'],
         additionalProperties: false,
     },
     call: async ({ category, keywords, quantity = null }) => {
@@ -167,13 +186,12 @@ registerTool('typesense_search', {
         console.log('[TS_SEARCH] tsClient?', !!tsClient, 'TS_COLLECTION?', TS_COLLECTION, 'TS_API_KEY_TRIMMED length?', TS_API_KEY_TRIMMED?.length);
         if (!tsClient || !TS_COLLECTION) {
             console.log('[TS_SEARCH] Returning MOCK (client or collection missing)');
-            return {
-                products: [
-                    { sku: 'MOCK-001', name: `${category} basic - ${keywords}`, brand: 'Generic', price: 10, quantity: qty },
-                    { sku: 'MOCK-002', name: `${category} standard - ${keywords}`, brand: 'Generic', price: 20, quantity: qty },
-                    { sku: 'MOCK-003', name: `${category} pro - ${keywords}`, brand: 'Generic', price: 30, quantity: qty },
-                ],
-            };
+            const products = [
+                { sku: 'MOCK-001', name: `${category} basic - ${keywords}`, brand: 'Generic', price: 10, quantity: qty },
+                { sku: 'MOCK-002', name: `${category} standard - ${keywords}`, brand: 'Generic', price: 20, quantity: qty },
+                { sku: 'MOCK-003', name: `${category} pro - ${keywords}`, brand: 'Generic', price: 30, quantity: qty },
+            ];
+            return { content: [{ type: 'json', json: { products } }] };
         }
 
         try {
@@ -241,15 +259,14 @@ registerTool('typesense_search', {
                 return { sku, name, brand, price, quantity: qty };
             });
             console.log('[TS_SEARCH] Success:', products.length, 'products');
-            return { products };
+            return { content: [{ type: 'json', json: { products } }] };
         } catch (outerErr) {
             // Fall back to mock data on failure
             console.log('[TS_SEARCH] Outer catch (fallback):', outerErr?.message);
-            return {
-                products: [
-                    { sku: 'FALLBACK-001', name: `${category} fallback - ${keywords}`, brand: 'Generic', price: 15, quantity: qty },
-                ],
-            };
+            const products = [
+                { sku: 'FALLBACK-001', name: `${category} fallback - ${keywords}`, brand: 'Generic', price: 15, quantity: qty },
+            ];
+            return { content: [{ type: 'json', json: { products } }] };
         }
     },
 });
