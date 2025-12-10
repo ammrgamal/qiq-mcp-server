@@ -317,6 +317,7 @@ registerTool('typesense_config_set', {
             collection: { type: 'string' },
             query_by: { type: 'string' },
             query_by_weights: { type: 'string' },
+            apiKeyLength: { type: 'number' },
         },
         required: ['applied'],
         additionalProperties: false,
@@ -328,7 +329,11 @@ registerTool('typesense_config_set', {
             if (host) TS_HOST = sanitize(host);
             if (protocol) TS_PROTOCOL = sanitize(protocol);
             if (typeof port === 'number' && Number.isFinite(port)) TS_PORT = port;
-            if (apiKey) TS_API_KEY_TRIMMED = sanitize(apiKey);
+            if (apiKey) {
+                const sanitized = sanitize(apiKey);
+                TS_API_KEY_TRIMMED = sanitized;
+                console.log('[TS_CONFIG_SET] API key sanitized from', apiKey.length, 'to', sanitized?.length, 'chars');
+            }
             if (collection) TS_COLLECTION = sanitize(collection);
             // Reset cached query_by if override provided
             if (query_by) cachedQueryBy = sanitize(query_by);
@@ -344,6 +349,7 @@ registerTool('typesense_config_set', {
                 collection: TS_COLLECTION || '',
                 query_by: cachedQueryBy || sanitize(process.env.TYPESENSE_QUERY_BY) || '',
                 query_by_weights: sanitize(process.env.TYPESENSE_QUERY_BY_WEIGHTS) || '',
+                apiKeyLength: TS_API_KEY_TRIMMED?.length || 0,
             };
         } catch (e) {
             console.error('[TS_CONFIG_SET] Error:', e);
