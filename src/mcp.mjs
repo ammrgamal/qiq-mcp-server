@@ -167,7 +167,24 @@ registerTool('typesense_search', {
                         type: { type: 'string' },
                         json: {
                             type: 'object',
-                            properties: { products: { type: 'array', items: productSchema } },
+                            properties: {
+                                products: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            sku: { type: 'string' },
+                                            name: { type: 'string' },
+                                            brand: { type: 'string' },
+                                            price: { type: 'number' },
+                                            quantity: { type: 'number' },
+                                            score: { type: 'number' }
+                                        },
+                                        required: ['sku', 'name', 'brand', 'price'],
+                                        additionalProperties: false,
+                                    }
+                                }
+                            },
                             required: ['products'],
                             additionalProperties: false,
                         },
@@ -182,16 +199,11 @@ registerTool('typesense_search', {
     },
     call: async ({ category, keywords, quantity = null }) => {
         // If Typesense is not configured, return deterministic mock data
-        const qty = typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+        const qty = typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? quantity : undefined;
         console.log('[TS_SEARCH] tsClient?', !!tsClient, 'TS_COLLECTION?', TS_COLLECTION, 'TS_API_KEY_TRIMMED length?', TS_API_KEY_TRIMMED?.length);
         if (!tsClient || !TS_COLLECTION) {
-            console.log('[TS_SEARCH] Returning MOCK (client or collection missing)');
-            const products = [
-                { sku: 'MOCK-001', name: `${category} basic - ${keywords}`, brand: 'Generic', price: 10, quantity: qty },
-                { sku: 'MOCK-002', name: `${category} standard - ${keywords}`, brand: 'Generic', price: 20, quantity: qty },
-                { sku: 'MOCK-003', name: `${category} pro - ${keywords}`, brand: 'Generic', price: 30, quantity: qty },
-            ];
-            return { content: [{ type: 'json', json: { products } }] };
+            console.log('[TS_SEARCH] Client or collection missing, returning empty products');
+            return { content: [{ type: 'json', json: { products: [] } }] };
         }
 
         try {
@@ -251,22 +263,27 @@ registerTool('typesense_search', {
             }
 
             const products = (result.hits || []).map((hit, idx) => {
-                const doc = hit.document || {};
-                const sku = doc.sku || doc.mpn_normalized || doc.object_id || doc.id || `TS-${idx + 1}`;
-                const name = doc.name || doc.title || `${category} item`;
-                const brand = doc.brand || doc.vendor || 'Unknown';
-                const price = typeof doc.price === 'number' ? doc.price : Number(doc.price) || 0;
-                return { sku, name, brand, price, quantity: qty };
-            });
+                const doc = hit?.document || {};
+                const sku = (doc.sku ?? doc.mpn_normalized ?? doc.object_id ?? doc.id ?? `TS-${idx + 1}`);
+                const nameVal = (doc.name ?? doc.title);
+                const brandVal = (doc.brand ?? doc.vendor);
+                const priceRaw = (typeof doc.price === 'number') ? doc.price : Number(doc.price);
+                const price = Number.isFinite(priceRaw) ? priceRaw : NaN;
+                // Skip if required fields missing
+                if (!sku || !nameVal || !brandVal || !Number.isFinite(price)) return null;
+                const normalized = { sku: String(sku), name: String(nameVal), brand: String(brandVal), price };
+                if (typeof qty === 'number') normalized.quantity = qty;
+                // Optional score from text_match (Typesense returns bigint-like number)
+                const tm = hit?.text_match;
+                if (typeof tm === 'number') normalized.score = tm;
+                return normalized;
+            }).filter(Boolean);
             console.log('[TS_SEARCH] Success:', products.length, 'products');
             return { content: [{ type: 'json', json: { products } }] };
         } catch (outerErr) {
             // Fall back to mock data on failure
             console.log('[TS_SEARCH] Outer catch (fallback):', outerErr?.message);
-            const products = [
-                { sku: 'FALLBACK-001', name: `${category} fallback - ${keywords}`, brand: 'Generic', price: 15, quantity: qty },
-            ];
-            return { content: [{ type: 'json', json: { products } }] };
+            return { content: [{ type: 'json', json: { products: [] } }] };
         }
     },
 });
