@@ -2,6 +2,29 @@ import 'dotenv/config';
 import express from 'express';
 import { getTools, handleJsonRpc } from './src/mcp.mjs';
 
+// Normalize tool results at the transport layer for backward compatibility.
+// Ensures tools/call always returns a valid CallToolResult envelope where required (e.g., typesense_search).
+function normalizeCallToolResult(name, rawResult) {
+    try {
+        // Pass through already valid CallToolResult
+        if (rawResult && Array.isArray(rawResult.content)) return rawResult;
+
+        // Back-compat: legacy implementations that returned { products: [...] }
+        if (name === 'typesense_search') {
+            const products = Array.isArray(rawResult?.products) ? rawResult.products : [];
+            return { content: [{ type: 'json', json: { products } }] };
+        }
+
+        // Default: return as-is
+        return rawResult;
+    } catch {
+        // If anything goes wrong, return an empty content payload rather than erroring the call
+        return (name === 'typesense_search')
+            ? { content: [{ type: 'json', json: { products: [] } }] }
+            : rawResult;
+    }
+}
+
 const PORT = Number(process.env.PORT || 8080);
 const REQUIRED_TOKEN = process.env.MCP_TOKEN?.trim();
 
@@ -84,7 +107,18 @@ app.get('/mcp/http', authGuard, (req, res) => {
 app.post('/mcp/http', authGuard, async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try {
-        const out = await handleJsonRpc(req.body);
+        // Intercept tools/call to ensure normalized CallToolResult envelopes
+        const incoming = req.body;
+        if (incoming && incoming.method === 'tools/call' && incoming.params && typeof incoming.params.name === 'string') {
+            const rpcResult = await handleJsonRpc(incoming);
+            // If successful result, normalize shape for known tools
+            if (rpcResult && rpcResult.result && !rpcResult.error) {
+                rpcResult.result = normalizeCallToolResult(incoming.params.name, rpcResult.result);
+            }
+            res.status(200).json(rpcResult);
+            return;
+        }
+        const out = await handleJsonRpc(incoming);
         res.status(200).json(out);
     } catch {
         res.status(200).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
