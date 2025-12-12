@@ -76,17 +76,7 @@ export function handleJsonRpc(input) {
 
 // --- Built-in tools: Typesense search and QIQ scoring ---
 // Environment-driven configuration so the server can run without hardcoding
-const sanitize = (v) => {
-    if (v === undefined || v === null) return undefined;
-    const s = String(v).trim();
-    // Remove wrapping single or double quotes, if present
-    const unq = s.replace(/^"+|"+$/g, '').replace(/^'+|'+$/g, '');
-    return unq.trim();
-};
-
-let TS_HOST = sanitize(process.env.TYPESENSE_HOST);
-let TS_PROTOCOL = sanitize(process.env.TYPESENSE_PROTOCOL); // http|https
-let TS_PORT = (() => {
+    // Return a CallToolResult per MCP: { content: [ { type: 'json', json: { products: [...] } } ] }
     const raw = sanitize(process.env.TYPESENSE_PORT);
     if (raw && raw !== '') {
         const n = Number(raw);
@@ -133,28 +123,21 @@ const productSchema = {
         name: { type: 'string' },
         brand: { type: 'string' },
         price: { type: 'number' },
-        quantity: { type: 'number' },
-        score: { type: 'number' }
-    },
+    call: async ({ objectID, objectIDs, keywords, category } = {}) => {
+        // If Typesense is not configured, return empty list (no mock fallbacks)
     required: ['sku', 'name', 'brand', 'price', 'quantity'],
-    additionalProperties: true,
-};
-
-let cachedQueryBy = null;
-
-registerTool('typesense_search', {
-    description: 'Search products from Typesense and return normalized product list.',
-    inputSchema: {
-        type: 'object',
-        properties: {
-            category: { type: 'string' },
+        if (!tsClient || !TS_COLLECTION) {
+            console.log('[TS_SEARCH] Client or collection missing, returning empty products');
+            return { content: [{ type: 'json', json: { products: [] } }] };
+        }
+            objectID: { type: 'string' },
+            objectIDs: { type: 'array', items: { type: 'string' } },
             keywords: { type: 'string' },
-            quantity: { type: ['number', 'null'] },
-            duration_years: { type: ['number', 'null'] },
+            category: { type: 'string' },
         },
-        required: ['category', 'keywords'],
         additionalProperties: false,
     },
+<<<<<<< HEAD
     outputSchema: {
         type: 'object',
         properties: { products: { type: 'array', items: productSchema } },
@@ -164,6 +147,57 @@ registerTool('typesense_search', {
     call: async ({ category, keywords, quantity = null }) => {
         // If Typesense is not configured, return deterministic mock data
         const qty = typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+=======
+    // Return a CallToolResult per MCP: { content: [ { type: 'json', json: { products: [...] } } ] }
+    outputSchema: {
+        type: 'object',
+        properties: {
+            content: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        type: { type: 'string' },
+                        json: {
+                            type: 'object',
+                            properties: {
+                                products: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            objectID: { type: 'string' },
+                                            name: { type: 'string' },
+                                            brand: { type: 'string' },
+                                            item_type: { type: 'string' },
+                                            category: { type: 'string' },
+                                            price: { type: 'number' },
+                                            list_price: { type: 'number' },
+                                            availability: { type: 'number' },
+                                            image: { type: 'string' },
+                                            spec_sheet: { type: 'string' },
+                                            url: { type: 'string' }
+                                        },
+                                        required: ['objectID', 'name', 'brand', 'category', 'price', 'availability', 'url'],
+                                        additionalProperties: false,
+                                    }
+                                }
+                            },
+                            required: ['products'],
+                            additionalProperties: false,
+                        },
+                    },
+                    required: ['type', 'json'],
+                    additionalProperties: false,
+                },
+            },
+        },
+        required: ['content'],
+        additionalProperties: false,
+    },
+    call: async ({ objectID, objectIDs, keywords, category } = {}) => {
+        // If Typesense is not configured, return empty list (no mock fallbacks)
+>>>>>>> acf3d55 (fix: typesense_search schema and HTTP MCP server)
         console.log('[TS_SEARCH] tsClient?', !!tsClient, 'TS_COLLECTION?', TS_COLLECTION, 'TS_API_KEY_TRIMMED length?', TS_API_KEY_TRIMMED?.length);
         if (!tsClient || !TS_COLLECTION) {
             console.log('[TS_SEARCH] Returning MOCK (client or collection missing)');
@@ -176,80 +210,109 @@ registerTool('typesense_search', {
             };
         }
 
+        const coerceNum = (v) => {
+            if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : undefined;
+        };
+
+        const mapDoc = (doc) => {
+            if (!doc || typeof doc !== 'object') return null;
+            const oid = doc.object_id ?? doc.objectID ?? doc.mpn_normalized ?? doc.sku ?? doc.id;
+            const name = doc.name ?? doc.title ?? '';
+            const brand = doc.brand ?? doc.vendor ?? '';
+            const item_type = doc.item_type ?? doc.type ?? '';
+            const categoryVal = doc.category ?? '';
+            const price = coerceNum(doc.price) ?? 0;
+            const list_price = coerceNum(doc.list_price) ?? price;
+            const availability = coerceNum(doc.availability ?? doc.stock ?? doc.inventory) ?? 0;
+            const image = doc.image ?? doc.image_url ?? '';
+            const spec_sheet = doc.spec_sheet ?? doc.datasheet_url ?? '';
+            const url = doc.url ?? (oid ? `https://quickitquote.com/catalog/${encodeURIComponent(String(oid))}` : '');
+            if (!oid || !name || !brand || !categoryVal) return null;
+            return {
+                objectID: String(oid),
+                name: String(name),
+                brand: String(brand),
+                item_type: String(item_type || ''),
+                category: String(categoryVal),
+                price,
+                list_price,
+                availability,
+                image: String(image || ''),
+                spec_sheet: String(spec_sheet || ''),
+                url: String(url || ''),
+            };
+        };
+
         try {
-            // Determine query_by fields once
-            if (!cachedQueryBy) {
-                const envQueryBy = sanitize(process.env.TYPESENSE_QUERY_BY);
-                if (envQueryBy) {
-                    // Honor explicit override and skip schema discovery
-                    cachedQueryBy = envQueryBy;
-                } else {
-                    // Try to discover string fields from schema, then fallback to sensible defaults
+            const results = [];
+
+            // Prefer exact retrieval if objectIDs provided
+            const ids = [];
+            if (Array.isArray(objectIDs)) ids.push(...objectIDs.filter(Boolean));
+            if (objectID) ids.push(objectID);
+            const uniqueIds = Array.from(new Set(ids.map((x) => String(x))));
+
+            if (uniqueIds.length > 0) {
+                for (const id of uniqueIds) {
                     try {
-                        const schema = await tsClient.collections(TS_COLLECTION).retrieve();
-                        const strFields = (schema?.fields || [])
-                            .filter((f) => typeof f?.name === 'string' && String(f.type || '').startsWith('string'))
-                            .map((f) => f.name);
-                        cachedQueryBy = (strFields.length ? strFields : ['name', 'description', 'brand', 'category']).join(',');
-                    } catch {
-                        cachedQueryBy = ['name', 'description', 'brand', 'category'].join(',');
+                        const doc = await tsClient.collections(TS_COLLECTION).documents(id).retrieve();
+                        const mapped = mapDoc(doc);
+                        if (mapped) results.push(mapped);
+                    } catch (e) {
+                        // If retrieve fails, soft-fallback to a keyword search constrained by id and category
+                        try {
+                            const qb = cachedQueryBy || sanitize(process.env.TYPESENSE_QUERY_BY) || 'name';
+                            const res = await tsClient.collections(TS_COLLECTION).documents().search({
+                                q: id,
+                                query_by: qb,
+                                per_page: 5,
+                                ...(category ? { filter_by: `category:=${JSON.stringify(category)}` } : {}),
+                            });
+                            for (const hit of (res.hits || [])) {
+                                const mapped = mapDoc(hit?.document);
+                                if (mapped && mapped.objectID === id) results.push(mapped);
+                            }
+                        } catch (e2) {
+                            console.log('[TS_SEARCH] retrieve/search failed for', id, e2?.message || e2);
+                        }
                     }
                 }
-            }
-
-            let result;
-            const qString = Array.isArray(keywords) ? keywords.join(' ') : (keywords && String(keywords).trim() ? String(keywords) : '*');
-            const baseParams = {
-                q: qString,
-                per_page: 25,
-            };
-
-            // Attempt search with discovered query_by, then progressively degrade
-            const attempt = async (queryBy) => {
-                const params = { ...baseParams, query_by: queryBy };
-                const weights = sanitize(process.env.TYPESENSE_QUERY_BY_WEIGHTS);
-                if (weights && weights.split(',').filter(Boolean).length === queryBy.split(',').filter(Boolean).length) {
-                    params.query_by_weights = weights;
+            } else {
+                // Keyword search path
+                // Determine query_by once
+                if (!cachedQueryBy) {
+                    const envQueryBy = sanitize(process.env.TYPESENSE_QUERY_BY);
+                    if (envQueryBy) {
+                        cachedQueryBy = envQueryBy;
+                    } else {
+                        try {
+                            const schema = await tsClient.collections(TS_COLLECTION).retrieve();
+                            const strFields = (schema?.fields || [])
+                                .filter((f) => typeof f?.name === 'string' && String(f.type || '').startsWith('string'))
+                                .map((f) => f.name);
+                            cachedQueryBy = (strFields.length ? strFields : ['name', 'description', 'brand', 'category']).join(',');
+                        } catch {
+                            cachedQueryBy = ['name', 'description', 'brand', 'category'].join(',');
+                        }
+                    }
                 }
+
+                const qString = keywords && String(keywords).trim() ? String(keywords) : '*';
+                const params = { q: qString, query_by: cachedQueryBy, per_page: 25 };
                 if (category) params.filter_by = `category:=${JSON.stringify(category)}`;
-                return tsClient.collections(TS_COLLECTION).documents().search(params);
-            };
-
-            // If qString looks like an exact identifier (e.g., KL4066IAVFS), prioritize identifier fields
-            const looksLikeId = /[A-Za-z]{2,}\d{2,}|\d{3,}[A-Za-z]{2,}/.test(qString);
-            const idFirst = 'mpn_normalized,object_id,name,sku,brand,category';
-
-            try {
-                result = await attempt(looksLikeId ? idFirst : cachedQueryBy);
-            } catch (err1) {
-                console.log('[TS_SEARCH] Primary attempt failed:', err1?.message);
-                // Fallbacks: try a common single field, then a conservative default set
-                try {
-                    result = await attempt('name');
-                } catch (err2) {
-                    console.log('[TS_SEARCH] Fallback name failed:', err2?.message);
-                    result = await attempt('mpn_normalized,object_id,name,sku,brand,category');
+                const result = await tsClient.collections(TS_COLLECTION).documents().search(params);
+                for (const hit of (result.hits || [])) {
+                    const mapped = mapDoc(hit?.document);
+                    if (mapped) results.push(mapped);
                 }
             }
 
-            const products = (result.hits || []).map((hit, idx) => {
-                const doc = hit.document || {};
-                const sku = doc.sku || doc.mpn_normalized || doc.object_id || doc.id || `TS-${idx + 1}`;
-                const name = doc.name || doc.title || `${category} item`;
-                const brand = doc.brand || doc.vendor || 'Unknown';
-                const price = typeof doc.price === 'number' ? doc.price : Number(doc.price) || 0;
-                return { sku, name, brand, price, quantity: qty };
-            });
-            console.log('[TS_SEARCH] Success:', products.length, 'products');
-            return { products };
+            return { content: [{ type: 'json', json: { products: results } }] };
         } catch (outerErr) {
-            // Fall back to mock data on failure
-            console.log('[TS_SEARCH] Outer catch (fallback):', outerErr?.message);
-            return {
-                products: [
-                    { sku: 'FALLBACK-001', name: `${category} fallback - ${keywords}`, brand: 'Generic', price: 15, quantity: qty },
-                ],
-            };
+            console.log('[TS_SEARCH] Outer catch:', outerErr?.message || outerErr);
+            return { content: [{ type: 'json', json: { products: [] } }] };
         }
     },
 });
