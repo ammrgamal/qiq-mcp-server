@@ -83,6 +83,58 @@ registerTool('ping', {
 });
 
 // Required tool: typesense_search (HTTP returns must be { products: [...] } with no wrappers)
+import dotenv from 'dotenv';
+import Typesense from 'typesense';
+
+dotenv.config();
+
+let typesenseClient = null;
+let typesenseConfig = {
+    host: process.env.TYPESENSE_HOST,
+    protocol: process.env.TYPESENSE_PROTOCOL || 'https',
+    port: parseInt(process.env.TYPESENSE_PORT || (process.env.TYPESENSE_PROTOCOL === 'http' ? '80' : '443'), 10),
+    apiKey: process.env.TYPESENSE_SEARCH_ONLY_KEY || process.env.TYPESENSE_API_KEY || process.env.TYPESENSE_ADMIN_API_KEY,
+    collection: process.env.TYPESENSE_COLLECTION || 'quickitquote_products',
+    query_by: process.env.TYPESENSE_QUERY_BY || 'name,description,brand,category',
+};
+
+function buildTypesenseClient() {
+    const { host, protocol, port, apiKey } = typesenseConfig;
+    if (!host || !apiKey) {
+        typesenseClient = null;
+        return null;
+    }
+    typesenseClient = new Typesense.Client({
+        nodes: [{ host, port, protocol }],
+        apiKey,
+        connectionTimeoutSeconds: 5,
+    });
+    return typesenseClient;
+}
+
+buildTypesenseClient();
+
+function normalizeAvailability(n) {
+    const v = Number(n) || 0;
+    return v; // Keep number as required; downstream maps to semantics
+}
+
+function mapProduct(doc) {
+    const oid = String(doc.objectID || doc.object_id || doc.mpn_normalized || doc.vendor_mpn || doc.sku || '');
+    const name = String(doc.display_name || doc.name || oid);
+    const brandRaw = String(doc.brand || doc.vendor || '').trim();
+    const brand = brandRaw.replace(/\s+Lab$/i, '').trim() || brandRaw;
+    const item_type = String(doc.item_type || doc.type || '').toLowerCase();
+    const category = String(doc.category || doc.subcategory || '').toLowerCase();
+    const price = Number(doc.price || doc.unit_price || 0);
+    const list_price = doc.list_price != null ? Number(doc.list_price) : 0;
+    const availability = normalizeAvailability(doc.availability);
+    const image = String(doc.image || doc.image_url || `https://cdn.quickitquote.com/catalog/${encodeURIComponent(oid)}.jpg`);
+    const spec_sheet = String(doc.spec_sheet || doc.spec || `https://cdn.quickitquote.com/specs/${encodeURIComponent(oid)}.pdf`);
+    const url = `https://quickitquote.com/catalog/${encodeURIComponent(oid)}`;
+    return { objectID: oid, name, brand, item_type, category, price, list_price, availability, image, spec_sheet, url };
+}
+
 registerTool('typesense_search', {
     description: 'Return products by objectIDs or keywords. If objectIDs are provided, returns those products in canonical QIQ shape.',
     inputSchema: {
@@ -131,24 +183,47 @@ registerTool('typesense_search', {
             const ids = Array.from(new Set(collectIds.filter(Boolean).map((v) => String(v))));
 
             if (ids.length > 0) {
-                const products = ids.map((oid) => ({
-                    objectID: oid,
-                    name: oid,
-                    brand: '',
-                    item_type: '',
-                    category: category ? String(category) : '',
-                    price: 0,
-                    list_price: 0,
-                    availability: 0,
-                    image: `https://cdn.quickitquote.com/catalog/${encodeURIComponent(oid)}.jpg`,
-                    spec_sheet: `https://cdn.quickitquote.com/specs/${encodeURIComponent(oid)}.pdf`,
-                    url: `https://quickitquote.com/catalog/${encodeURIComponent(oid)}`,
-                }));
-                return { products };
+                // Prefer direct document retrieve per objectID
+                const client = typesenseClient || buildTypesenseClient();
+                const products = [];
+                if (client && typesenseConfig.collection) {
+                    const coll = client.collections(typesenseConfig.collection).documents();
+                    for (const oid of ids) {
+                        try {
+                            const doc = await coll.retrieve(oid);
+                            products.push(mapProduct(doc || { objectID: oid }));
+                        } catch (e) {
+                            // Not found—emit minimal placeholder
+                            products.push(mapProduct({ objectID: oid, name: oid }));
+                        }
+                    }
+                    return { products };
+                } else {
+                    // No Typesense config—fallback placeholders
+                    const fallback = ids.map((oid) => mapProduct({ objectID: oid, name: oid, category }));
+                    return { products: fallback };
+                }
             }
 
             // Simple keywords fallback returns empty set for now
             if (typeof keywords === 'string' && keywords.trim().length > 0) {
+                const client = typesenseClient || buildTypesenseClient();
+                if (client && typesenseConfig.collection) {
+                    try {
+                        const searchParams = {
+                            q: keywords.trim(),
+                            query_by: typesenseConfig.query_by,
+                            per_page: 10,
+                        };
+                        const resp = await client.collections(typesenseConfig.collection).documents().search(searchParams);
+                        const hits = Array.isArray(resp.hits) ? resp.hits : [];
+                        const products = hits.map((h) => mapProduct(h.document || {}));
+                        return { products };
+                    } catch (e) {
+                        console.error('[typesense_search] search error:', e?.message || e);
+                        return { products: [] };
+                    }
+                }
                 return { products: [] };
             }
 
