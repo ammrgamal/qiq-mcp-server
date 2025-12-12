@@ -2,9 +2,16 @@
     "functions": {
         "api/mcp.js": {
             "runtime": "edge"
+        },
+        "api/mcp-http.js": {
+            "runtime": "edge"
         }
     },
     "routes": [
+        {
+            "src": "/mcp/http",
+            "dest": "/api/mcp-http"
+        },
         {
             "src": "/mcp",
             "dest": "/api/mcp"
