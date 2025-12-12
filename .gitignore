@@ -1,4 +1,5 @@
 .vercel
+.vercel*.env
 .env*.local
 # Exclude environment files
 .env
