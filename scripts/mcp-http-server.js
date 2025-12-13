@@ -48,9 +48,70 @@ app.post('/mcp/http', async (req, res) => {
     }
 });
 
+// --- Simple SSE transport for MCP ---
+// Maintains a set of connected SSE clients and pushes JSON-RPC responses to them.
+const sseClients = new Set();
+
+app.get('/mcp/sse', (req, res) => {
+    // Establish SSE stream
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    // Allow proxies to keep it alive
+    res.flushHeaders?.();
+
+    const client = res;
+    sseClients.add(client);
+    log('SSE connected. clients:', sseClients.size);
+
+    // Send a ping to confirm stream is open
+    res.write(`event: ping\n`);
+    res.write(`data: {"ok":true}\n\n`);
+
+    req.on('close', () => {
+        sseClients.delete(client);
+        log('SSE disconnected. clients:', sseClients.size);
+    });
+});
+
+app.post('/mcp/sse', async (req, res) => {
+    // Accept JSON-RPC over POST, respond via SSE stream as well as HTTP response
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const start = Date.now();
+    try {
+        const payload = req.body || {};
+        const rpcResponse = await Promise.resolve(handleJsonRpc(payload));
+
+        // Push to all connected SSE clients
+        const data = JSON.stringify(rpcResponse && rpcResponse.result && rpcResponse.result.products ? rpcResponse.result : rpcResponse);
+        for (const client of sseClients) {
+            try {
+                client.write(`event: message\n`);
+                client.write(`data: ${data}\n\n`);
+            } catch (e) {
+                // On error, drop client
+                sseClients.delete(client);
+            }
+        }
+
+        // Also return HTTP response: strict body for products, else envelope
+        if (rpcResponse && rpcResponse.result && rpcResponse.result.products) {
+            return sendJson(res, rpcResponse.result);
+        }
+        return sendJson(res, rpcResponse);
+    } catch (e) {
+        log('sse error', e?.message || e);
+        return sendJson(res, { jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Server error' } });
+    } finally {
+        const ms = Date.now() - start;
+        log('sse done', requestId, ms + 'ms');
+    }
+});
+
 // Health
 app.get('/', (_req, res) => sendJson(res, { name: 'QIQ_MCP_HTTP', status: 'ok' }));
 
 app.listen(PORT, HOST, () => {
     log(`HTTP server listening on http://${HOST}:${PORT}/mcp/http`);
+    log(`SSE endpoint ready at       http://${HOST}:${PORT}/mcp/sse`);
 });
