@@ -224,14 +224,6 @@ registerTool('typesense_search', {
                             filter_by: filterBy,
                         });
                         hits = Array.isArray(res?.hits) ? res.hits : [];
-                        if (hits.length > 0) {
-                            try {
-                                const first = hits[0]?.document || {};
-                                console.log('[typesense_search] debug first doc keys:', Object.keys(first));
-                                const sample = JSON.stringify(first);
-                                console.log('[typesense_search] debug first doc sample:', sample.slice(0, 4000));
-                            } catch (e) { console.warn('[typesense_search] debug sample failed:', e?.message || e); }
-                        }
                         if (hits.length > 0) break;
                     } catch (e) {
                         // try next candidate
@@ -270,7 +262,7 @@ registerTool('typesense_search', {
             // No client or no inputs → empty JSON shape
             return { products: [] };
         } catch (e) {
-            console.error('[typesense_search] error:', e?.message || e);
+            // Silent failure to maintain strict output shape
             return { products: [] };
         }
     },
