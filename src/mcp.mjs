@@ -127,7 +127,28 @@ registerTool('typesense_search', {
         // Lazy import to avoid bundling when unused in some environments
         const { default: Typesense } = await import('typesense');
         const dotenvModule = await import('dotenv');
-        dotenvModule.default.config();
+        // Prefer .env.local if present, then fallback to .env
+        try {
+            const fs = await import('node:fs');
+            const path = await import('node:path');
+            const root = process.cwd();
+            const candidates = [
+                path.join(root, '.env.local'),
+                path.join(root, '.env.server'),
+                path.join(root, '.env.vercel'),
+                path.join(root, '.env'),
+            ];
+            const found = candidates.find((p) => {
+                try { return fs.existsSync(p); } catch { return false; }
+            });
+            if (found) {
+                dotenvModule.default.config({ path: found });
+            } else {
+                dotenvModule.default.config();
+            }
+        } catch {
+            dotenvModule.default.config();
+        }
 
         const host = process.env.TYPESENSE_HOST;
         const protocol = (process.env.TYPESENSE_PROTOCOL || 'https').toLowerCase();
@@ -150,16 +171,16 @@ registerTool('typesense_search', {
         }
 
         function mapRecord(rec) {
-            const oid = String(rec?.objectID || '');
-            const name = String(rec?.name || '');
-            const brand = String(rec?.brand || '');
-            const item_type = String(rec?.item_type || '');
-            const categoryVal = String(rec?.category || '');
-            const priceNum = Number.isFinite(Number(rec?.price)) ? Number(rec?.price) : 0;
-            const listPriceNum = Number.isFinite(Number(rec?.list_price)) ? Number(rec?.list_price) : 0;
-            const availabilityNum = toAvailability(Number(rec?.availability));
-            const imageUrl = String(rec?.image || '');
-            const specUrl = String(rec?.spec_sheet || '');
+            const oid = String(rec?.objectID || rec?.id || rec?.mpn || rec?.manufacturer_part_number || rec?.vendor_mpn || rec?.sku || '');
+            const name = String(rec?.name || rec?.title || '');
+            const brand = String(rec?.brand || rec?.vendor || rec?.manufacturer || '');
+            const item_type = String(rec?.item_type || rec?.type || rec?.product_type || '');
+            const categoryVal = String(rec?.category || rec?.categories || '');
+            const priceNum = Number.isFinite(Number(rec?.price ?? rec?.sale_price ?? rec?.unit_price)) ? Number(rec?.price ?? rec?.sale_price ?? rec?.unit_price) : 0;
+            const listPriceNum = Number.isFinite(Number(rec?.list_price ?? rec?.msrp ?? rec?.original_price)) ? Number(rec?.list_price ?? rec?.msrp ?? rec?.original_price) : 0;
+            const availabilityNum = toAvailability(Number(rec?.availability ?? rec?.stock ?? rec?.qty));
+            const imageUrl = String(rec?.image || rec?.image_url || rec?.thumbnail || '');
+            const specUrl = String(rec?.spec_sheet || rec?.spec_url || '');
             const url = `https://quickitquote.com/catalog/${encodeURIComponent(oid)}`;
             return {
                 objectID: oid,
@@ -201,6 +222,12 @@ registerTool('typesense_search', {
                             filter_by: filterBy,
                         });
                         hits = Array.isArray(res?.hits) ? res.hits : [];
+                        if (hits.length > 0) {
+                            try {
+                                const first = hits[0]?.document || {};
+                                console.log('[typesense_search] debug first doc keys:', Object.keys(first));
+                            } catch { }
+                        }
                         if (hits.length > 0) break;
                     } catch (e) {
                         // try next candidate
@@ -208,7 +235,17 @@ registerTool('typesense_search', {
                     }
                 }
                 const products = ids.map((oid) => {
-                    const hit = hits.find((h) => String(h?.document?.objectID ?? '') === String(oid));
+                    const hit = hits.find((h) => {
+                        const d = h?.document || {};
+                        return [
+                            d.objectID,
+                            d.id,
+                            d.mpn,
+                            d.manufacturer_part_number,
+                            d.vendor_mpn,
+                            d.sku,
+                        ].some((v) => String(v || '') === String(oid));
+                    });
                     if (hit && hit.document) return mapRecord(hit.document);
                     return mapRecord({ objectID: oid });
                 });
