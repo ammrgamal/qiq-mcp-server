@@ -1,0 +1,67 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "SSH: Connect VPS",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\scripts\\posh-ssh-session.ps1",
+				"-Host",
+				"109.199.105.196",
+				"-User",
+				"root",
+				"-AcceptKey",
+				"-PersistGlobal"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "SSH: Connect VPS",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\scripts\\posh-ssh-session.ps1",
+				"-SshHost",
+				"109.199.105.196",
+				"-User",
+				"root",
+				"-AcceptKey",
+				"-PersistGlobal"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "SSH: Connect VPS (SshHost)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\scripts\\posh-ssh-session.ps1",
+				"-SshHost",
+				"109.199.105.196",
+				"-User",
+				"root",
+				"-AcceptKey",
+				"-PersistGlobal",
+				"-Command",
+				"uname -a; whoami"
+			],
+			"isBackground": false,
+			"group": "build"
+		}
+	]
+}
