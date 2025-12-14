@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)] [string]$Password,
+    [string]$Password,
     [string]$VpsHost = "109.199.105.196",
     [string]$User = "root",
     [string]$ServerUrl = "https://mcp.quickitquote.com",
@@ -11,7 +11,8 @@ param(
     [string]$TypesenseApiKey = "7e7izXzNPboi42IaKNl63MTWR7ps7ROo",
     [string]$TypesenseCollection = "quickitquote_products",
     [string]$TypesenseQueryBy = "object_id,name,brand,category",
-    [string[]]$TestObjectIDs = @("KL4069IA1XXS", "KL4069IA1YRS")
+    [string[]]$TestObjectIDs = @("KL4069IA1XXS", "KL4069IA1YRS"),
+    [string]$KeyFile = $(Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'keys\qiq-vps')
 )
 
 Write-Host "\n=== Deploy to VPS: $VpsHost ===" -ForegroundColor Cyan
@@ -23,12 +24,19 @@ if (-not (Get-Module -ListAvailable -Name Posh-SSH)) {
 }
 Import-Module Posh-SSH
 
-# Create credential
-$secPass = ConvertTo-SecureString $Password -AsPlainText -Force
+# Create credential (password or empty for key)
+if ($Password) { $secPass = ConvertTo-SecureString $Password -AsPlainText -Force } else { $secPass = New-Object System.Security.SecureString }
 $cred = [PSCredential]::new($User, $secPass)
 
-# Open SSH session
-$session = New-SSHSession -ComputerName $VpsHost -Credential $cred -AcceptKey
+# Open SSH session (prefer key if available)
+if (Test-Path $KeyFile) {
+    Write-Host "Using key file: $KeyFile" -ForegroundColor DarkGray
+    $session = New-SSHSession -ComputerName $VpsHost -Credential $cred -KeyFile $KeyFile -AcceptKey
+}
+else {
+    Write-Host "Using password auth" -ForegroundColor DarkGray
+    $session = New-SSHSession -ComputerName $VpsHost -Credential $cred -AcceptKey
+}
 if (-not $session.Connected) { throw "SSH connection failed to $Host" }
 Write-Host "SSH connected: $($session.Host)" -ForegroundColor Green
 
@@ -39,7 +47,12 @@ Invoke-SSHCommand -SessionId $session.SessionId -Command "cp $remoteFile $remote
 Write-Host "Backup created: $remoteFile.bak" -ForegroundColor DarkGray
 
 Write-Host "Uploading mcp.mjs..." -ForegroundColor Yellow
-Set-SCPItem -ComputerName $VpsHost -Credential $cred -Path "$PSScriptRoot/../src/mcp.mjs" -Destination "$remoteSrc/" -AcceptKey -Force
+if (Test-Path $KeyFile) {
+    Set-SCPItem -ComputerName $VpsHost -Credential $cred -KeyFile $KeyFile -Path "$PSScriptRoot/../src/mcp.mjs" -Destination "$remoteSrc/" -AcceptKey -Force
+}
+else {
+    Set-SCPItem -ComputerName $VpsHost -Credential $cred -Path "$PSScriptRoot/../src/mcp.mjs" -Destination "$remoteSrc/" -AcceptKey -Force
+}
 Invoke-SSHCommand -SessionId $session.SessionId -Command "wc -c $remoteFile" | Select-Object -ExpandProperty Output | Write-Host
 
 # Restart PM2 process

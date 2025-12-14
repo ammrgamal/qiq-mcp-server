@@ -12,3 +12,9 @@
 # Node modules
 node_modules/
 Docs/*.local.env
+# SSH keys (keep public key optional)
+scripts/keys/*
+!scripts/keys/*.pub
+*.pem
+*.ppk
+.deploy_last.sha

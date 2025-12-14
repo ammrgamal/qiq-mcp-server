@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Auto Deploy Watch",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-File",
+				".\\scripts\\auto-deploy-watch.ps1"
+			],
+			"isBackground": true
+		}
+	]
+}

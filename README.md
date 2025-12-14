@@ -100,10 +100,36 @@ powershell -File .\scripts\deploy-vps.ps1 -Password "YOUR_VPS_PASSWORD"
 powershell -File .\scripts\deploy-vps.ps1 -Password "YOUR_VPS_PASSWORD" -Host 109.199.105.196 -User root -ServerUrl https://mcp.quickitquote.com -RemotePath /opt/qiq-mcp-server -Pm2Process qiq-mcp-http -TypesenseHost b7p0h5alwcoxe6qgp-1.a1.typesense.net -TypesenseApiKey 7e7izXzNPboi42IaKNl63MTWR7ps7ROo -TypesenseCollection quickitquote_products -TypesenseQueryBy "object_id,name,brand,category" -TestObjectIDs KL4069IA1XXS,KL4069IA1YRS
 ```
 
+### One-time SSH key setup (recommended)
+```
+# Generate key (already done by the script, but you can run manually)
+ssh-keygen -t ed25519 -f .\scripts\keys\qiq-vps -N "" -C "qiq-vps"
+
+# Install the public key on VPS (uses password once)
+powershell -File .\scripts\setup-ssh-key.ps1 -Password "YOUR_VPS_PASSWORD"
+
+# From now on, deploy works with key-only (no password)
+powershell -File .\scripts\deploy-vps.ps1
+```
+
 ### Notes on casing
 - Agent Builder lowercases input keys automatically; `objectID` becomes `objectid`.
 - The server accepts both `objectID` and `objectid` for `typesense_search`.
 - As a fallback, you can send `keywords` instead of `objectID`.
+
+## Autopilot: Auto Deploy on Commit
+To make deployments happen automatically without manual steps, start the background watcher:
+
+```
+powershell -File .\scripts\auto-deploy-watch.ps1
+```
+
+What it does:
+- Checks the current git HEAD every 60 seconds
+- If a new commit is detected, it runs `scripts/deploy-vps.ps1`
+- Stores last deployed commit in `.deploy_last.sha` (ignored by git)
+
+Tip: Combine this with your existing auto-commit task so edits get committed and deployed hands‑free.
 
 You can deploy the environment file to the server and restart the service using the workflow `.github/workflows/deploy-env.yml`.
 
