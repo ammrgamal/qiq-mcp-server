@@ -11,3 +11,4 @@
 .env.server
 # Node modules
 node_modules/
+Docs/*.local.env
