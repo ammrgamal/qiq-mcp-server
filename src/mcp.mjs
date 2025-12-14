@@ -261,26 +261,53 @@ registerTool('typesense_search', {
             if (uniqueIds.length > 0) {
                 for (const id of uniqueIds) {
                     try {
+                        // First try direct document retrieve by primary doc id
                         const doc = await tsClient.collections(TS_COLLECTION).documents(id).retrieve();
                         const mapped = mapDoc(doc);
-                        if (mapped) results.push(mapped);
+                        if (mapped) { results.push(mapped); continue; }
                     } catch (e) {
-                        // If retrieve fails, soft-fallback to a keyword search constrained by id and category
-                        try {
-                            const qb = cachedQueryBy || sanitize(process.env.TYPESENSE_QUERY_BY) || 'name';
+                        // ignore and try searches
+                    }
+
+                    // Strong fallback: exact filter_by on known id fields with q='*'
+                    try {
+                        const idFields = ['object_id', 'objectID', 'mpn_normalized', 'sku', 'id'];
+                        let found = false;
+                        for (const field of idFields) {
+                            const filters = [`${field}:=${JSON.stringify(id)}`];
+                            if (category) filters.push(`category:=${JSON.stringify(category)}`);
                             const res = await tsClient.collections(TS_COLLECTION).documents().search({
-                                q: id,
-                                query_by: qb,
+                                q: '*',
+                                query_by: cachedQueryBy || sanitize(process.env.TYPESENSE_QUERY_BY) || 'name',
                                 per_page: 5,
-                                ...(category ? { filter_by: `category:=${JSON.stringify(category)}` } : {}),
+                                filter_by: filters.join(' && '),
                             });
                             for (const hit of (res.hits || [])) {
                                 const mapped = mapDoc(hit?.document);
-                                if (mapped && mapped.objectID === id) results.push(mapped);
+                                if (mapped && mapped.objectID === id) { results.push(mapped); found = true; }
                             }
-                        } catch (e2) {
-                            console.log('[TS_SEARCH] retrieve/search failed for', id, e2?.message || e2);
+                            if (found) break;
                         }
+                        if (found) continue;
+                    } catch (e2) {
+                        console.log('[TS_SEARCH] exact filter_by search failed for', id, e2?.message || e2);
+                    }
+
+                    // Last resort: keyword search with q=id
+                    try {
+                        const qb = cachedQueryBy || sanitize(process.env.TYPESENSE_QUERY_BY) || 'name';
+                        const res = await tsClient.collections(TS_COLLECTION).documents().search({
+                            q: id,
+                            query_by: qb,
+                            per_page: 10,
+                            ...(category ? { filter_by: `category:=${JSON.stringify(category)}` } : {}),
+                        });
+                        for (const hit of (res.hits || [])) {
+                            const mapped = mapDoc(hit?.document);
+                            if (mapped && mapped.objectID === id) results.push(mapped);
+                        }
+                    } catch (e3) {
+                        console.log('[TS_SEARCH] keyword search failed for', id, e3?.message || e3);
                     }
                 }
             } else {
