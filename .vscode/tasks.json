@@ -62,6 +62,72 @@
 			],
 			"isBackground": false,
 			"group": "build"
+		},
+		{
+			"label": "SSH: Connect VPS (Key Auto)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\scripts\\posh-ssh-session.ps1",
+				"-SshHost",
+				"109.199.105.196",
+				"-User",
+				"root",
+				"-AcceptKey",
+				"-PersistGlobal"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "SSH: Run Status",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\scripts\\ssh-run.ps1",
+				"-Command",
+				"uname -a; whoami; ls -la /opt/qiq-mcp-server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "SSH: Run Status",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				".\\scripts\\ssh-run.ps1",
+				"-Command",
+				"uname -a; whoami; ls -la /opt/qiq-mcp-server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "SSH: Status (Connect+Run)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"& .\\scripts\\posh-ssh-session.ps1 -SshHost 109.199.105.196 -User root -AcceptKey -PersistGlobal; & .\\scripts\\ssh-run.ps1 -Command 'uname -a; whoami; ls -la /opt/qiq-mcp-server'"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }
