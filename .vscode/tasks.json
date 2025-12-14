@@ -11,6 +11,17 @@
 				".\\scripts\\auto-deploy-watch.ps1"
 			],
 			"isBackground": true
+		},
+		{
+			"label": "Auto Commit Watch",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"while($true) { Start-Sleep -Seconds 30; if((git status --porcelain).Length -gt 0) { git add .; git commit -m 'auto: sync'; git push } }"
+			],
+			"isBackground": true
 		}
 	]
 }
