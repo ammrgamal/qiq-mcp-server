@@ -20,7 +20,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\posh-ssh-session.p
 
 ### Connect (SSH key)
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\posh-ssh-session.ps1 -SshHost 109.199.105.196 -User root -KeyFile "C:\Users\<YOU>\.ssh\id_ed25519" -AcceptKey -PersistGlobal
+# Auto-detects id_ed25519 or id_rsa if present under %USERPROFILE%\.ssh
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\posh-ssh-session.ps1 -SshHost 109.199.105.196 -User root -AcceptKey -PersistGlobal
 ```
 
 ### Run a command on connect

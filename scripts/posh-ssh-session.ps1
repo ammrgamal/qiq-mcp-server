@@ -27,6 +27,14 @@ $accept = $false
 if ($AcceptKey) { $accept = $true }
 
 try {
+    # Auto-detect default key if none provided
+    if (-not $KeyFile -or [string]::IsNullOrWhiteSpace($KeyFile)) {
+        $defaultKeyEd = Join-Path $env:USERPROFILE ".ssh\id_ed25519"
+        $defaultKeyRsa = Join-Path $env:USERPROFILE ".ssh\id_rsa"
+        if (Test-Path $defaultKeyEd) { $KeyFile = $defaultKeyEd }
+        elseif (Test-Path $defaultKeyRsa) { $KeyFile = $defaultKeyRsa }
+    }
+
     if ($KeyFile) {
         # Key-based authentication (recommended)
         if ($KeyPass) {
