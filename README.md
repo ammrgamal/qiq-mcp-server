@@ -1,5 +1,79 @@
 ## Deployment via GitHub Actions (env sync)
 
+# MCP Typesense Search Quick Guide
+
+This repo includes a simple way to query the `typesense_search` MCP tool from your terminal so you can quickly look up products by `objectID`.
+
+## One‑liner (PowerShell)
+
+You can send a JSON‑RPC call directly to the server:
+
+```
+$bodySearch = '{
+	"jsonrpc": "2.0",
+	"id": 1,
+	"method": "tools/call",
+	"params": {
+		"name": "typesense_search",
+		"arguments": { "objectID": "KL4069IA1YRS" }
+	}
+}';
+Invoke-RestMethod -Method Post -Uri "https://mcp.quickitquote.com/mcp/sse" -ContentType "application/json" -Body $bodySearch | ConvertTo-Json -Depth 12
+```
+
+If your server requires a token, add a header:
+
+```
+$headers = @{ Authorization = "Bearer $env:MCP_TOKEN" }
+Invoke-RestMethod -Method Post -Uri "https://mcp.quickitquote.com/mcp/sse" -ContentType "application/json" -Headers $headers -Body $bodySearch | ConvertTo-Json -Depth 12
+```
+
+## Helper script
+
+Use the provided PowerShell helper script to make this even easier:
+
+File: `scripts/typesense-search.ps1`
+
+### Usage
+
+```
+# Basic (no token)
+powershell -File ./scripts/typesense-search.ps1 -ObjectID KL4069IA1YRS
+
+# With token
+powershell -File ./scripts/typesense-search.ps1 -ObjectID KL4069IA1XXS -Token $env:MCP_TOKEN
+
+# Custom server URL
+powershell -File ./scripts/typesense-search.ps1 -ObjectID KL4069IA1YRS -ServerUrl https://mcp.quickitquote.com
+```
+
+The script prints a clean JSON response containing `products`.
+
+## Local server testing
+
+If you want to test against a local instance, start the server (default port 8080):
+
+```
+node run.mjs
+```
+
+Then call:
+
+```
+$bodySearch = '{
+	"jsonrpc": "2.0",
+	"id": 2,
+	"method": "tools/call",
+	"params": {
+		"name": "typesense_search",
+		"arguments": { "objectID": "KL4069IA1YRS" }
+	}
+}';
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/mcp/http" -ContentType "application/json" -Body $bodySearch | ConvertTo-Json -Depth 12
+```
+
+Tip: If `MCP_TOKEN` is set in your environment and the server enforces auth, pass `-Token $env:MCP_TOKEN` to the helper script or add an `Authorization` header as shown above.
+
 You can deploy the environment file to the server and restart the service using the workflow `.github/workflows/deploy-env.yml`.
 
 Required repo secrets:
