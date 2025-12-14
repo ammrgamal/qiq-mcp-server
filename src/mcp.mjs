@@ -201,7 +201,12 @@ registerTool('typesense_search', {
         required: ['content'],
         additionalProperties: false,
     },
-    call: async ({ objectID, objectIDs, keywords, category } = {}) => {
+    call: async (args = {}) => {
+        // Accept both camelCase and lowercase keys due to Agent Builder UI lowercasing
+        const objectID = args.objectID ?? args.objectid;
+        const objectIDs = args.objectIDs ?? args.objectids;
+        const keywords = args.keywords ?? args.keyword ?? args.q ?? args.query;
+        const category = args.category ?? args.Category ?? args.cat;
         // If Typesense is not configured, return empty list (no mock fallbacks)
         console.log('[TS_SEARCH] tsClient?', !!tsClient, 'TS_COLLECTION?', TS_COLLECTION, 'TS_API_KEY_TRIMMED length?', TS_API_KEY_TRIMMED?.length);
         if (!tsClient || !TS_COLLECTION) {
