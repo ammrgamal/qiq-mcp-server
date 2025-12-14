@@ -74,6 +74,37 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8080/mcp/http" -ContentTyp
 
 Tip: If `MCP_TOKEN` is set in your environment and the server enforces auth, pass `-Token $env:MCP_TOKEN` to the helper script or add an `Authorization` header as shown above.
 
+## Standard VPS Deploy & Test
+
+To consistently update the MCP server on your VPS and verify searches work with lowercase keys (Agent Builder UI lowercases input mapping), use:
+
+File: `scripts/deploy-vps.ps1`
+
+### What it does
+- SSH into the VPS using Posh-SSH
+- Backup and upload `src/mcp.mjs`
+- Restart the PM2 process (`qiq-mcp-http`)
+- Read `MCP_TOKEN` from `.env.server` and configure Typesense at runtime via `typesense_config_set`
+- Health check via `typesense_health`
+- Test searches using `objectid` for sample IDs
+
+### Usage
+```
+# Install Posh-SSH if not installed
+Install-Module Posh-SSH -Scope CurrentUser -Force
+
+# Run deploy (replace password as needed)
+powershell -File .\scripts\deploy-vps.ps1 -Password "YOUR_VPS_PASSWORD"
+
+# Optional: customize parameters
+powershell -File .\scripts\deploy-vps.ps1 -Password "YOUR_VPS_PASSWORD" -Host 109.199.105.196 -User root -ServerUrl https://mcp.quickitquote.com -RemotePath /opt/qiq-mcp-server -Pm2Process qiq-mcp-http -TypesenseHost b7p0h5alwcoxe6qgp-1.a1.typesense.net -TypesenseApiKey 7e7izXzNPboi42IaKNl63MTWR7ps7ROo -TypesenseCollection quickitquote_products -TypesenseQueryBy "object_id,name,brand,category" -TestObjectIDs KL4069IA1XXS,KL4069IA1YRS
+```
+
+### Notes on casing
+- Agent Builder lowercases input keys automatically; `objectID` becomes `objectid`.
+- The server accepts both `objectID` and `objectid` for `typesense_search`.
+- As a fallback, you can send `keywords` instead of `objectID`.
+
 You can deploy the environment file to the server and restart the service using the workflow `.github/workflows/deploy-env.yml`.
 
 Required repo secrets:
