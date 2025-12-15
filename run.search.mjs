@@ -227,4 +227,31 @@ app.get('/tools', authGuard, (_req, res) => {
     res.json({ tools: getTools() });
 });
 
+// Well-known discovery (helps clients figure out exact endpoints)
+app.get('/.well-known/mcp.json', authGuard, (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https');
+    const host = String(req.headers['host'] || 'localhost');
+    const base = `${proto}://${host}`;
+    res.json({
+        ok: true,
+        name: 'MCP_HTTP_SEARCH',
+        version: '1.0.0',
+        transports: {
+            sse: {
+                streamUrl: `${base}/sse`,
+                postUrl: `${base}/sse`,
+                method: 'GET+POST',
+            },
+            http: {
+                streamUrl: `${base}/http`,
+                postUrl: `${base}/http`,
+                method: 'GET+POST',
+            },
+        },
+        initialize: { protocolVersion: '2024-11-05', capabilities: { tools: { listChanged: true } } },
+        tools: getTools(),
+    });
+});
+
 app.listen(PORT, '0.0.0.0', () => console.log(`MCP HTTP Search running on PORT ${PORT}`));

@@ -246,6 +246,31 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass http://127.0.0.1:__PORT__/tools;
     }
+
+    # Discovery document
+    location = /.well-known/mcp.json {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/.well-known/mcp.json;
+    }
+
+    location = /.well-known/mcp.json {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/.well-known/mcp.json;
+    }
+
+    location = /.well-known/mcp.json {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/.well-known/mcp.json;
+    }
 }
 '@
 $nginxConfContent = $nginxConfTemplate -replace '__PORT__', $SearchPort
