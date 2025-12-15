@@ -213,6 +213,8 @@ $nginxConfContent
 EOF" | Out-Null
 Invoke-SSHCommand -SessionId $session.SessionId -Command "rm -f /etc/nginx/sites-enabled/mcp.quickitquote.com /etc/nginx/sites-enabled/001-mcp.quickitquote.com" | Out-Null
 Invoke-SSHCommand -SessionId $session.SessionId -Command "ln -sf $remoteNginxConf /etc/nginx/sites-enabled/001-mcp.quickitquote.com" | Out-Null
+# Optionally disable the default site to prevent global HTTP->HTTPS redirects from capturing our host
+Invoke-SSHCommand -SessionId $session.SessionId -Command "if [ -e /etc/nginx/sites-enabled/default ]; then mv -f /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.disabled; fi" | Out-Null
 Invoke-SSHCommand -SessionId $session.SessionId -Command "nginx -t" | Select-Object -ExpandProperty Output | Write-Host
 Invoke-SSHCommand -SessionId $session.SessionId -Command "systemctl reload nginx" | Out-Null
 Write-Host "Nginx reloaded. If DNS/TLS are set, https://mcp.quickitquote.com/mcp/http and /mcp/sse proxy to :$SearchPort" -ForegroundColor Green
@@ -236,6 +238,9 @@ echo
 echo '--- whoami via host map ---'
 curl -sS -H 'Host: mcp.quickitquote.com' http://127.0.0.1/whoami || true
 echo
+echo '--- whoami via host map (headers + location) ---'
+curl -i -sS -H 'Host: mcp.quickitquote.com' http://127.0.0.1/whoami -o /dev/null -w 'status=%{http_code} location=%{redirect_url}\n' || true
+echo
 echo '--- nginx -T head ---'
 nginx -T 2>&1 | sed -n '1,200p'
 echo
@@ -247,13 +252,35 @@ echo ">>> /etc/nginx/sites-available/001-mcp.quickitquote.com"
 sed -n '1,200p' /etc/nginx/sites-available/001-mcp.quickitquote.com || true
 echo
 echo '--- nginx: search for any server_name mcp.quickitquote.com ---'
-grep -RIn "server_name \\b*mcp.quickitquote.com" /etc/nginx 2>/dev/null || true
+grep -RIn "server_name.*mcp.quickitquote.com" /etc/nginx 2>/dev/null || true
+echo '--- nginx: any occurrence of mcp.quickitquote.com ---'
+grep -RIn "mcp.quickitquote.com" /etc/nginx 2>/dev/null || true
 echo
 echo '--- nginx: default vhost head ---'
 sed -n '1,200p' /etc/nginx/sites-available/default || true
 echo
 echo '--- nginx: rules with return 301 ---'
 grep -RIn "return 301" /etc/nginx 2>/dev/null || true
+echo
+echo '--- nginx.conf ---'
+sed -n '1,220p' /etc/nginx/nginx.conf || true
+echo
+echo '--- /etc/nginx/conf.d ---'
+ls -la /etc/nginx/conf.d || true
+for f in /etc/nginx/conf.d/*.conf; do
+    echo ">>> $f"; sed -n '1,200p' "$f"; echo; done 2>/dev/null || true
+echo
+echo '--- nginx: sites-available listing ---'
+ls -la /etc/nginx/sites-available || true
+echo
+echo '>>> default file info'
+ls -la /etc/nginx/sites-available/default || true
+echo
+echo '>>> default file content (raw cat)'
+cat /etc/nginx/sites-available/default 2>/dev/null | sed -n '1,200p' || true
+echo
+echo '>>> existing /etc/nginx/sites-available/mcp.quickitquote.com (if present)'
+sed -n '1,240p' /etc/nginx/sites-available/mcp.quickitquote.com 2>/dev/null || true
 "@
 
 # Write and run the diagnostic script on the remote host
