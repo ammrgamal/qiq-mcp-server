@@ -91,4 +91,7 @@ app.get('/mcp/info', authGuard, (_req, res) => {
     res.json({ ok: true, tools: getTools() });
 });
 
+// Debug route
+app.get('/whoami', (_req, res) => res.send('main-8080'));
+
 app.listen(PORT, '0.0.0.0', () => console.log(`MCP Server running on PORT ${PORT}`));

@@ -151,5 +151,7 @@ app.post('/mcp/http', authGuard, async (req, res) => {
 
 app.get('/', (_req, res) => res.json({ ok: true, tools: getTools() }));
 app.get('/mcp/info', authGuard, (_req, res) => res.json({ ok: true, tools: getTools() }));
+// Debug route
+app.get('/whoami', (_req, res) => res.send('search-3003'));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`MCP HTTP Search running on PORT ${PORT}`));
