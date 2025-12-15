@@ -621,3 +621,31 @@ Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/inspect_mcp
 $inspectScript
 EOSH
 chmod +x /tmp/inspect_mcp2.sh && bash /tmp/inspect_mcp2.sh" | Select-Object -ExpandProperty Output | Write-Host
+
+# --- Start Cloudflared ephemeral tunnel to port $SearchPort (optional fallback) ---
+Write-Host "\nStarting Cloudflared ephemeral tunnel to expose :$SearchPort as a public URL ..." -ForegroundColor Yellow
+$cfScript = @'
+#!/usr/bin/env bash
+set -e
+if ! command -v cloudflared >/dev/null 2>&1; then
+    apt-get update -y && apt-get install -y wget || true
+    cd /tmp
+    wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    dpkg -i cloudflared-linux-amd64.deb || apt-get -f install -y
+fi
+mkdir -p /var/log
+pkill -f "cloudflared tunnel --url http://127.0.0.1:__PORT__" 2>/dev/null || true
+nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:__PORT__ > /var/log/cloudflared-__PORT__.log 2>&1 &
+sleep 3
+for i in $(seq 1 30); do
+    URL=$(grep -m1 -oE "https://[a-z0-9-]+\\.trycloudflare\\.com" /var/log/cloudflared-__PORT__.log || true)
+    if [ -n "$URL" ]; then break; fi
+    sleep 1
+done
+echo "TUNNEL_URL=$URL"
+'@
+$cfScript = $cfScript -replace '__PORT__', $SearchPort
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/start_cf_tunnel.sh <<'EOSH'
+$cfScript
+EOSH
+chmod +x /tmp/start_cf_tunnel.sh && bash /tmp/start_cf_tunnel.sh" | Select-Object -ExpandProperty Output | Write-Host
