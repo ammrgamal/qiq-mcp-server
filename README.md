@@ -336,3 +336,45 @@ The server supports a Typesense-backed search tool `typesense_search`. Configure
 - `TYPESENSE_QUERY_BY`: optional, comma-separated list of string fields to search by (e.g., `name,description,brand,category`). If omitted, the server attempts to retrieve the collection schema to discover string fields; otherwise uses sensible defaults.
 
 Diagnostics: call `typesense_health` via JSON-RPC to verify connectivity and see fields used. With search-only keys, schema retrieval may not be permitted; in that case the tool reports or uses the `query_by` fields provided via environment.
+
+## Minimal MCP HTTP Search (Agent Builder-friendly)
+
+This repo includes a minimal MCP-compatible HTTP service intended for simple integration in OpenAI Agent Builder without dealing with complex casing or transport issues.
+
+- Endpoint (direct on VPS): `http://<VPS_IP>:<SEARCH_MCP_PORT>/mcp/http`
+- Tool name: `qiq_http_search`
+- Arguments: `{ "q": "<query or product id>" }`
+- Response: JSON-RPC result with MCP content array containing a JSON payload. If the backend returns `products`, we wrap it as `{ products: [...] }`.
+
+Example POST body:
+
+```
+{
+	"jsonrpc": "2.0",
+	"id": 1,
+	"method": "tools/call",
+	"params": {
+		"name": "qiq_http_search",
+		"arguments": { "q": "KL4069IA1YRS" }
+	}
+}
+```
+
+Auth: If `MCP_TOKEN` is set in `.env.server`, include header `Authorization: Bearer <token>`.
+
+Notes:
+- This service calls `https://quickitquote.com/api/search?q=...` under the hood.
+- It is separate from the main MCP (`qiq-mcp-http`) so you can keep the original tools as fallback.
+
+### Agent Builder Setup
+
+- MCP Node:
+	- URL: `http://<VPS_IP>:3003/mcp/http` (or configure Nginx to expose under your domain)
+	- Tool: `qiq_http_search`
+	- Arguments: `{ "q": "{{input}}" }`
+	- Headers: `Authorization: Bearer <MCP_TOKEN>` if enabled
+
+### Health and Info
+
+- `GET /mcp/info` returns `{ ok: true, tools: [...] }` including `qiq_http_search`.
+- `POST /mcp/http` accepts JSON-RPC per the example above.

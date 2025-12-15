@@ -5,6 +5,8 @@ param(
     [string]$ServerUrl = "https://mcp.quickitquote.com",
     [string]$RemotePath = "/opt/qiq-mcp-server",
     [string]$Pm2Process = "qiq-mcp-http",
+    [string]$SearchPm2Process = "qiq-mcp-search",
+    [int]$SearchPort = 3003,
     [string]$TypesenseHost = "b7p0h5alwcoxe6qgp-1.a1.typesense.net",
     [string]$TypesenseProtocol = "https",
     [int]$TypesensePort = 443,
@@ -59,6 +61,37 @@ Invoke-SSHCommand -SessionId $session.SessionId -Command "wc -c $remoteFile" | S
 Write-Host "Restarting PM2 process: $Pm2Process" -ForegroundColor Yellow
 Invoke-SSHCommand -SessionId $session.SessionId -Command "pm2 restart $Pm2Process && sleep 1" | Out-Null
 
+# Upload and (re)start minimal MCP HTTP Search service
+$remoteSearchFile = "$RemotePath/run.search.mjs"
+Write-Host "Uploading run.search.mjs (minimal HTTP search service)..." -ForegroundColor Yellow
+if (Test-Path $KeyFile) {
+    Set-SCPItem -ComputerName $VpsHost -Credential $cred -KeyFile $KeyFile -Path "$PSScriptRoot/../run.search.mjs" -Destination "$RemotePath/" -AcceptKey -Force
+}
+else {
+    Set-SCPItem -ComputerName $VpsHost -Credential $cred -Path "$PSScriptRoot/../run.search.mjs" -Destination "$RemotePath/" -AcceptKey -Force
+}
+Invoke-SSHCommand -SessionId $session.SessionId -Command "wc -c $remoteSearchFile" | Select-Object -ExpandProperty Output | Write-Host
+
+# Ensure env contains MCP_TOKEN and SEARCH_MCP_PORT
+Write-Host "Ensuring .env.server has SEARCH_MCP_PORT and MCP_TOKEN..." -ForegroundColor Yellow
+$envServerPre = Invoke-SSHCommand -SessionId $session.SessionId -Command "sed -n '1,220p' $RemotePath/.env.server" | Select-Object -ExpandProperty Output
+$hasToken = ($envServerPre | Where-Object { $_ -match '^MCP_TOKEN=' })
+$hasPort = ($envServerPre | Where-Object { $_ -match '^SEARCH_MCP_PORT=' })
+if ($null -eq $hasPort) {
+    Invoke-SSHCommand -SessionId $session.SessionId -Command "echo SEARCH_MCP_PORT=$SearchPort >> $RemotePath/.env.server" | Out-Null
+}
+if ($null -eq $hasToken) {
+    # Generate a simple token if missing
+    $genToken = [Guid]::NewGuid().ToString('N')
+    Invoke-SSHCommand -SessionId $session.SessionId -Command "echo MCP_TOKEN=$genToken >> $RemotePath/.env.server" | Out-Null
+}
+
+# Start or restart PM2 process for search service
+Write-Host "Starting PM2 process: $SearchPm2Process on port $SearchPort" -ForegroundColor Yellow
+$startCmd = "bash -lc 'cd $RemotePath && set -a && . ./.env.server && set +a && pm2 start run.search.mjs --name $SearchPm2Process --update-env'"
+Invoke-SSHCommand -SessionId $session.SessionId -Command $startCmd | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "pm2 status $SearchPm2Process" | Select-Object -ExpandProperty Output | Write-Host
+
 # Read MCP token from remote .env.server
 $envServer = Invoke-SSHCommand -SessionId $session.SessionId -Command "sed -n '1,220p' $RemotePath/.env.server" | Select-Object -ExpandProperty Output
 $tokenLine = ($envServer | Where-Object { $_ -match '^MCP_TOKEN=' })
@@ -88,6 +121,12 @@ $bodyHealth = '{
 $respHealth = Invoke-RestMethod -Method Post -Uri "$ServerUrl/mcp/sse" -ContentType "application/json" -Headers $headers -Body $bodyHealth
 ($respHealth | ConvertTo-Json -Depth 12)
 
+# Health/info check for minimal HTTP search service
+Write-Host "Checking MCP HTTP Search info (direct port)..." -ForegroundColor Yellow
+$searchInfoUrl = "http://${VpsHost}:$SearchPort/mcp/info"
+$searchInfo = Invoke-RestMethod -Method Get -Uri $searchInfoUrl -Headers $headers -ErrorAction SilentlyContinue
+($searchInfo | ConvertTo-Json -Depth 10)
+
 # Run test searches using lowercase objectid
 foreach ($oid in $TestObjectIDs) {
     Write-Host "\n--- test search (objectid=$oid) ---" -ForegroundColor Cyan
@@ -102,6 +141,21 @@ foreach ($oid in $TestObjectIDs) {
     catch {
         Write-Host "Search error:" $_.Exception.Message -ForegroundColor Red
     }
+}
+
+# Run minimal HTTP search tool via JSON-RPC
+Write-Host "\n--- qiq_http_search (q=KL4069IA1YRS) ---" -ForegroundColor Cyan
+$bodyHttpSearch = @{
+    jsonrpc = "2.0"; id = 9200; method = "tools/call";
+    params = @{ name = "qiq_http_search"; arguments = @{ q = "KL4069IA1YRS" } }
+} | ConvertTo-Json -Depth 6
+try {
+    $httpSearchUrl = "http://${VpsHost}:$SearchPort/mcp/http"
+    $resp2 = Invoke-RestMethod -Method Post -Uri $httpSearchUrl -ContentType "application/json" -Headers $headers -Body $bodyHttpSearch
+    $resp2 | ConvertTo-Json -Depth 12 | Write-Host
+}
+catch {
+    Write-Host "HTTP search error:" $_.Exception.Message -ForegroundColor Red
 }
 
 Write-Host "\n=== Deploy complete ===" -ForegroundColor Green
