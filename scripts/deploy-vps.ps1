@@ -172,6 +172,15 @@ server {
     listen 80;
     server_name mcp.quickitquote.com;
 
+    # Fallback: proxy any other path to backend
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__;
+    }
+
     location /mcp/http {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -366,6 +375,14 @@ server {
     listen 80;
     server_name __HOST__;
 
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__;
+    }
+
     location /mcp/http {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -478,6 +495,14 @@ server {
     server_name __HOST__;
     ssl_certificate /etc/letsencrypt/live/__HOST__/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/__HOST__/privkey.pem;
+
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__;
+    }
 
     location /mcp/http {
         proxy_set_header Host $host;
