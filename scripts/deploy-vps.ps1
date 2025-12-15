@@ -87,9 +87,9 @@ if ($null -eq $hasToken) {
 }
 
 # Start or restart PM2 process for search service
-Write-Host "Starting PM2 process: $SearchPm2Process on port $SearchPort" -ForegroundColor Yellow
-$startCmd = "bash -lc 'cd $RemotePath && set -a && . ./.env.server && set +a && pm2 start run.search.mjs --name $SearchPm2Process --update-env'"
-Invoke-SSHCommand -SessionId $session.SessionId -Command $startCmd | Out-Null
+Write-Host "Ensuring PM2 process: $SearchPm2Process on port $SearchPort" -ForegroundColor Yellow
+$ensureCmd = "bash -lc 'cd $RemotePath && set -a && . ./.env.server && set +a && (pm2 restart $SearchPm2Process || pm2 start run.search.mjs --name $SearchPm2Process) && pm2 save'"
+Invoke-SSHCommand -SessionId $session.SessionId -Command $ensureCmd | Out-Null
 Invoke-SSHCommand -SessionId $session.SessionId -Command "pm2 status $SearchPm2Process" | Select-Object -ExpandProperty Output | Write-Host
 
 # Read MCP token from remote .env.server
@@ -164,40 +164,47 @@ Write-Host "\n=== Deploy complete ===" -ForegroundColor Green
 Write-Host "Configuring Nginx mapping for /mcp/http and /mcp/sse under domain (optional step)..." -ForegroundColor Yellow
 $remoteNginxConf = "/etc/nginx/sites-available/001-mcp.quickitquote.com"
 
-$nginxConfContent = @"
+# Build nginx config using a single-quoted here-string to avoid PowerShell variable expansion
+$nginxConfTemplate = @'
 server {
     listen 80;
     server_name mcp.quickitquote.com;
 
     location /mcp/http {
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_pass http://127.0.0.1:$SearchPort/mcp/http;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/http;
     }
 
     # SSE requires proper headers; pass through as-is
     location /mcp/sse {
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
-        proxy_pass http://127.0.0.1:$SearchPort/mcp/sse;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/sse;
     }
 
     location /mcp/info {
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_pass http://127.0.0.1:$SearchPort/mcp/info;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/info;
+    }
+
+    # simple identifier
+    location = /whoami {
+        proxy_pass http://127.0.0.1:__PORT__/whoami;
     }
 }
-"@
+'@
+$nginxConfContent = $nginxConfTemplate -replace '__PORT__', $SearchPort
 
 # Write config on remote
 Invoke-SSHCommand -SessionId $session.SessionId -Command "mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled" | Out-Null
@@ -210,8 +217,47 @@ Invoke-SSHCommand -SessionId $session.SessionId -Command "nginx -t" | Select-Obj
 Invoke-SSHCommand -SessionId $session.SessionId -Command "systemctl reload nginx" | Out-Null
 Write-Host "Nginx reloaded. If DNS/TLS are set, https://mcp.quickitquote.com/mcp/http and /mcp/sse proxy to :$SearchPort" -ForegroundColor Green
 
-# Validate origin routing with Host header
+# Validate origin routing with Host header and inspect headers for possible auth
 Write-Host "Validating origin routing via curl..." -ForegroundColor Yellow
-$validateCmd = 'bash -lc ''curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" -H "Host: mcp.quickitquote.com" http://127.0.0.1/mcp/info'''
-$val = Invoke-SSHCommand -SessionId $session.SessionId -Command $validateCmd | Select-Object -ExpandProperty Output
-Write-Host $val
+$diagScript = @"
+#!/usr/bin/env bash
+echo '--- /mcp/info (host-mapped) ---'
+curl -i -sS -H 'Host: mcp.quickitquote.com' http://127.0.0.1/mcp/info | sed -n '1,25p'
+echo
+echo '--- POST /mcp/http (host-mapped) ---'
+curl -i -sS -H 'Host: mcp.quickitquote.com' -H 'Content-Type: application/json' -X POST http://127.0.0.1/mcp/http --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"qiq_http_search","arguments":{"q":"ping"}}}' | sed -n '1,30p'
+echo
+echo '--- POST /mcp/sse initialize (host-mapped) ---'
+curl -i -sS -H 'Host: mcp.quickitquote.com' -H 'Content-Type: application/json' -X POST http://127.0.0.1/mcp/sse --data '{"jsonrpc":"2.0","id":2,"method":"initialize","params":{}}' | sed -n '1,25p'
+echo
+echo '--- whoami direct (3003) ---'
+curl -sS http://127.0.0.1:$SearchPort/whoami || true
+echo
+echo '--- whoami via host map ---'
+curl -sS -H 'Host: mcp.quickitquote.com' http://127.0.0.1/whoami || true
+echo
+echo '--- nginx -T head ---'
+nginx -T 2>&1 | sed -n '1,200p'
+echo
+echo '--- nginx: sites-enabled ---'
+ls -l /etc/nginx/sites-enabled || true
+echo
+echo '--- nginx: our vhost file ---'
+echo ">>> /etc/nginx/sites-available/001-mcp.quickitquote.com"
+sed -n '1,200p' /etc/nginx/sites-available/001-mcp.quickitquote.com || true
+echo
+echo '--- nginx: search for any server_name mcp.quickitquote.com ---'
+grep -RIn "server_name \\b*mcp.quickitquote.com" /etc/nginx 2>/dev/null || true
+echo
+echo '--- nginx: default vhost head ---'
+sed -n '1,200p' /etc/nginx/sites-available/default || true
+echo
+echo '--- nginx: rules with return 301 ---'
+grep -RIn "return 301" /etc/nginx 2>/dev/null || true
+"@
+
+# Write and run the diagnostic script on the remote host
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/mcp_diag.sh <<'EOSH'
+$diagScript
+EOSH
+chmod +x /tmp/mcp_diag.sh && bash /tmp/mcp_diag.sh" | Select-Object -ExpandProperty Output | Write-Host
