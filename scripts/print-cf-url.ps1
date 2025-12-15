@@ -1,6 +1,6 @@
 param(
     [string]$VpsHost = "109.199.105.196",
-    [string]$KeyFile = "scripts\\keys\\qiq-vps"
+    [string]$KeyFile = "keys\\qiq-vps"
 )
 
 # Ensure Posh-SSH is available
@@ -23,7 +23,8 @@ try {
         $tail = Invoke-SSHCommand -SessionId $sess.SessionId -Command "tail -n 80 /var/log/cloudflared-3003.log 2>/dev/null || true"
         Write-Output "[no URL yet]"
         Write-Output $tail.Output
-    } else {
+    }
+    else {
         Write-Output $url
     }
 }
