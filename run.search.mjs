@@ -119,6 +119,10 @@ async function streamSse(req, res) {
     const init = await handleJsonRpc({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} });
     res.write('event: message\n');
     res.write(`data: ${JSON.stringify(init)}\n\n`);
+    // Proactively send tools/list to help clients that don't request it automatically
+    const list = await handleJsonRpc({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+    res.write('event: message\n');
+    res.write(`data: ${JSON.stringify(list)}\n\n`);
     const interval = setInterval(() => { res.write('event: ping\n'); res.write('data: "keep-alive"\n\n'); }, 25000);
     req.on('close', () => clearInterval(interval));
 }
