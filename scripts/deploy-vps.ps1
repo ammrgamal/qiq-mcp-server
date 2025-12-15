@@ -192,6 +192,25 @@ server {
         proxy_pass http://127.0.0.1:__PORT__/mcp/sse;
     }
 
+    # Aliases without /mcp prefix for broader compatibility
+    location /http {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/http;
+    }
+    location /sse {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_pass http://127.0.0.1:__PORT__/sse;
+    }
+
     location /mcp/info {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -200,9 +219,32 @@ server {
         proxy_pass http://127.0.0.1:__PORT__/mcp/info;
     }
 
+    location /info {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/info;
+    }
+
     # simple identifier
     location = /whoami {
         proxy_pass http://127.0.0.1:__PORT__/whoami;
+    }
+
+    location /mcp/tools {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/tools;
+    }
+    location /tools {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/tools;
     }
 }
 '@
@@ -318,6 +360,25 @@ server {
         proxy_pass http://127.0.0.1:__PORT__/mcp/sse;
     }
 
+    location /http {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/http;
+    }
+
+    location /sse {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_pass http://127.0.0.1:__PORT__/sse;
+    }
+
     location /mcp/info {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -326,12 +387,28 @@ server {
         proxy_pass http://127.0.0.1:__PORT__/mcp/info;
     }
 
+    location /info {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/info;
+    }
+
     location /mcp/tools {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass http://127.0.0.1:__PORT__/mcp/tools;
+    }
+
+    location /tools {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/tools;
     }
 
     location = /whoami {
@@ -396,6 +473,25 @@ server {
         proxy_pass http://127.0.0.1:__PORT__/mcp/sse;
     }
 
+    location /http {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/http;
+    }
+
+    location /sse {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_pass http://127.0.0.1:__PORT__/sse;
+    }
+
     location /mcp/info {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -404,12 +500,28 @@ server {
         proxy_pass http://127.0.0.1:__PORT__/mcp/info;
     }
 
+    location /info {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/info;
+    }
+
     location /mcp/tools {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass http://127.0.0.1:__PORT__/mcp/tools;
+    }
+
+    location /tools {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/tools;
     }
 
     location = /whoami {

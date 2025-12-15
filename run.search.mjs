@@ -143,6 +143,8 @@ async function streamSse(req, res) {
 }
 
 app.get('/mcp/sse', authGuard, streamSse);
+// Alias without /mcp prefix for clients expecting base paths
+app.get('/sse', authGuard, streamSse);
 app.options('/mcp/sse', (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -150,6 +152,11 @@ app.options('/mcp/sse', (req, res) => {
     res.status(204).end();
 });
 app.post('/mcp/sse', authGuard, async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    try { const out = await handleJsonRpc(req.body); res.status(200).json(out); }
+    catch { res.status(200).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }); }
+});
+app.post('/sse', authGuard, async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try { const out = await handleJsonRpc(req.body); res.status(200).json(out); }
     catch { res.status(200).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }); }
@@ -162,7 +169,13 @@ app.options('/mcp/http', (req, res) => {
     res.status(204).end();
 });
 app.get('/mcp/http', authGuard, streamSse);
+app.get('/http', authGuard, streamSse);
 app.post('/mcp/http', authGuard, async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    try { const out = await handleJsonRpc(req.body); res.status(200).json(out); }
+    catch { res.status(200).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }); }
+});
+app.post('/http', authGuard, async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try { const out = await handleJsonRpc(req.body); res.status(200).json(out); }
     catch { res.status(200).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }); }
@@ -186,7 +199,32 @@ app.get('/mcp/info', authGuard, (_req, res) => {
         tools: getTools(),
     });
 });
+app.get('/info', authGuard, (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({
+        ok: true,
+        initialize: {
+            jsonrpc: '2.0',
+            result: {
+                protocolVersion: '2024-11-05',
+                serverInfo: { name: 'MCP_HTTP_SEARCH', version: '1.0.0' },
+                capabilities: { tools: { listChanged: true } },
+            },
+            id: 0,
+        },
+        toolsList: { jsonrpc: '2.0', result: { tools: getTools() }, id: 1 },
+        tools: getTools(),
+    });
+});
 // Debug route
 app.get('/whoami', (_req, res) => res.send('search-3003'));
+app.get('/mcp/tools', authGuard, (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({ tools: getTools() });
+});
+app.get('/tools', authGuard, (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({ tools: getTools() });
+});
 
 app.listen(PORT, '0.0.0.0', () => console.log(`MCP HTTP Search running on PORT ${PORT}`));
