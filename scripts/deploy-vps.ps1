@@ -159,3 +159,52 @@ catch {
 }
 
 Write-Host "\n=== Deploy complete ===" -ForegroundColor Green
+
+# Optional: Nginx mapping for HTTPS domain (reverse proxy to port $SearchPort)
+Write-Host "Configuring Nginx mapping for /mcp/http and /mcp/sse under domain (optional step)..." -ForegroundColor Yellow
+$remoteNginxConf = "/etc/nginx/sites-available/mcp.quickitquote.com"
+
+$nginxConfContent = @"
+server {
+    listen 80;
+    server_name mcp.quickitquote.com;
+
+    location /mcp/http {
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_pass http://127.0.0.1:$SearchPort/mcp/http;
+    }
+
+    # SSE requires proper headers; pass through as-is
+    location /mcp/sse {
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_pass http://127.0.0.1:$SearchPort/mcp/sse;
+    }
+
+    location /mcp/info {
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_pass http://127.0.0.1:$SearchPort/mcp/info;
+    }
+}
+"@
+
+# Write config on remote
+Invoke-SSHCommand -SessionId $session.SessionId -Command "mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled" | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > $remoteNginxConf <<'EOF'
+$nginxConfContent
+EOF" | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "ln -sf $remoteNginxConf /etc/nginx/sites-enabled/mcp.quickitquote.com" | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "nginx -t" | Select-Object -ExpandProperty Output | Write-Host
+Invoke-SSHCommand -SessionId $session.SessionId -Command "systemctl reload nginx" | Out-Null
+Write-Host "Nginx reloaded. If DNS/TLS are set, https://mcp.quickitquote.com/mcp/http and /mcp/sse proxy to :$SearchPort" -ForegroundColor Green

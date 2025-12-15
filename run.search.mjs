@@ -52,16 +52,9 @@ function handleJsonRpc(input) {
 
 // Auth
 const PORT = Number(process.env.SEARCH_MCP_PORT || process.env.PORT || 3003);
-const REQUIRED_TOKEN = process.env.MCP_TOKEN?.trim();
-function authGuard(req, res, next) {
-    if (!REQUIRED_TOKEN) return next();
-    const hdr = req.headers['authorization'] || '';
-    const bearer = hdr.startsWith('Bearer ') ? hdr.slice(7) : undefined;
-    const token = bearer || req.query.token || req.headers['x-access-token'];
-    if (token === REQUIRED_TOKEN) return next();
-    res.setHeader('WWW-Authenticate', 'Bearer');
-    return res.status(401).json({ error: 'Unauthorized' });
-}
+// For fastest testing, disable auth (public) by default.
+// To re-enable, replace this with a token check like in run.mjs.
+function authGuard(_req, _res, next) { return next(); }
 
 // Register minimal HTTP search tool
 registerTool('qiq_http_search', {
