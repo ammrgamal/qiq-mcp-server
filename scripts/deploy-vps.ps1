@@ -368,25 +368,14 @@ chmod +x /tmp/issue_cert.sh && bash /tmp/issue_cert.sh" | Select-Object -ExpandP
 
 Write-Host "\nOrigin HTTPS configured. Try: https://$NewSubdomain/mcp/info and /mcp/tools" -ForegroundColor Green
 
-# Ensure explicit HTTPS server block exists and proxies correctly
+# Ensure explicit HTTPS server block exists and proxies correctly (built on client and uploaded)
 Write-Host "Creating explicit HTTPS server block for $NewSubdomain ..." -ForegroundColor Yellow
-$httpsConfScript = @"
-#!/usr/bin/env bash
-set -e
-CRT_DIR="/etc/letsencrypt/live/$NewSubdomain"
-if [ ! -d "$CRT_DIR" ]; then
-  echo "Certificate directory missing: $CRT_DIR" >&2
-  exit 1
-fi
-FULLCHAIN="$CRT_DIR/fullchain.pem"
-PRIVKEY="$CRT_DIR/privkey.pem"
-CONF_PATH="/etc/nginx/sites-available/003-$NewSubdomain-ssl"
-cat > "$CONF_PATH" <<'EOF'
+$sslConfTemplate = @'
 server {
     listen 443 ssl;
     server_name __HOST__;
-    ssl_certificate __FULLCHAIN__;
-    ssl_certificate_key __PRIVKEY__;
+    ssl_certificate /etc/letsencrypt/live/__HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__HOST__/privkey.pem;
 
     location /mcp/http {
         proxy_set_header Host $host;
@@ -427,19 +416,13 @@ server {
         proxy_pass http://127.0.0.1:__PORT__/whoami;
     }
 }
-EOF
-sed -i "s|__HOST__|$NewSubdomain|g" "$CONF_PATH"
-sed -i "s|__FULLCHAIN__|$FULLCHAIN|g" "$CONF_PATH"
-sed -i "s|__PRIVKEY__|$PRIVKEY|g" "$CONF_PATH"
-sed -i "s|__PORT__|$SearchPort|g" "$CONF_PATH"
-ln -sf "$CONF_PATH" "/etc/nginx/sites-enabled/003-$NewSubdomain-ssl"
-nginx -t && systemctl reload nginx || true
-echo "HTTPS server block deployed: $CONF_PATH"
-"@
-Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/nginx_ssl_block.sh <<'EOSH'
-$httpsConfScript
-EOSH
-chmod +x /tmp/nginx_ssl_block.sh && bash /tmp/nginx_ssl_block.sh" | Select-Object -ExpandProperty Output | Write-Host
+'@
+$sslConfContent = ($sslConfTemplate -replace '__HOST__', $NewSubdomain) -replace '__PORT__', $SearchPort
+$remoteSslConf = "/etc/nginx/sites-available/003-$NewSubdomain-ssl"
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > $remoteSslConf <<'EOF'
+$sslConfContent
+EOF" | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "ln -sf $remoteSslConf /etc/nginx/sites-enabled/003-$NewSubdomain-ssl && nginx -t && systemctl reload nginx" | Select-Object -ExpandProperty Output | Write-Host
 
 # Validate HTTPS endpoints
 Write-Host "\nValidating HTTPS endpoints for $NewSubdomain ..." -ForegroundColor Yellow
