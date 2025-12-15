@@ -31,7 +31,7 @@ function handleJsonRpc(input) {
 
         switch (method) {
             case 'initialize':
-                return ok({ protocolVersion: '2024-11-05', serverInfo: { name: 'MCP_HTTP_SEARCH', version: '1.0.0' }, capabilities: { tools: { listChanged: false } } });
+                return ok({ protocolVersion: '2024-11-05', serverInfo: { name: 'MCP_HTTP_SEARCH', version: '1.0.0' }, capabilities: { tools: { listChanged: true } } });
             case 'tools/list':
                 return ok({ tools: getTools() });
             case 'tools/call': {
