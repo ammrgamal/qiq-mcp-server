@@ -15,6 +15,8 @@ param(
     [string]$TypesenseQueryBy = "object_id,name,brand,category",
     [string[]]$TestObjectIDs = @("KL4069IA1XXS", "KL4069IA1YRS"),
     [string]$KeyFile = $(Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'keys\qiq-vps')
+    , [string]$NewSubdomain = "mcp2.quickitquote.com"
+    , [string]$LetsEncryptEmail = "admin@quickitquote.com"
 )
 
 Write-Host "\n=== Deploy to VPS: $VpsHost ===" -ForegroundColor Cyan
@@ -288,3 +290,80 @@ Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/mcp_diag.sh
 $diagScript
 EOSH
 chmod +x /tmp/mcp_diag.sh && bash /tmp/mcp_diag.sh" | Select-Object -ExpandProperty Output | Write-Host
+
+# --- Configure new direct HTTPS subdomain (bypass Cloudflare) ---
+Write-Host "\nConfiguring origin HTTPS for $NewSubdomain (Let's Encrypt) ..." -ForegroundColor Yellow
+$remoteNginxConf2 = "/etc/nginx/sites-available/002-$NewSubdomain"
+$nginxConfTemplate2 = @'
+server {
+    listen 80;
+    server_name __HOST__;
+
+    location /mcp/http {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/http;
+    }
+
+    location /mcp/sse {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_pass http://127.0.0.1:__PORT__/mcp/sse;
+    }
+
+    location /mcp/info {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/info;
+    }
+
+    location /mcp/tools {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/tools;
+    }
+
+    location = /whoami {
+        proxy_pass http://127.0.0.1:__PORT__/whoami;
+    }
+}
+'@
+$nginxConfContent2 = ($nginxConfTemplate2 -replace '__PORT__', $SearchPort) -replace '__HOST__', $NewSubdomain
+
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > $remoteNginxConf2 <<'EOF'
+$nginxConfContent2
+EOF" | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "ln -sf $remoteNginxConf2 /etc/nginx/sites-enabled/002-$NewSubdomain" | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "nginx -t" | Select-Object -ExpandProperty Output | Write-Host
+Invoke-SSHCommand -SessionId $session.SessionId -Command "systemctl reload nginx" | Out-Null
+
+# Install certbot if missing and issue certificate
+Write-Host "Issuing Let's Encrypt certificate for $NewSubdomain ..." -ForegroundColor Yellow
+$leScript = @"
+#!/usr/bin/env bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+if ! command -v certbot >/dev/null 2>&1; then
+  apt-get update -y && apt-get install -y certbot python3-certbot-nginx
+fi
+certbot --nginx -d $NewSubdomain --non-interactive --agree-tos -m $LetsEncryptEmail --redirect || true
+systemctl reload nginx || true
+echo DONE
+"@
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/issue_cert.sh <<'EOSH'
+$leScript
+EOSH
+chmod +x /tmp/issue_cert.sh && bash /tmp/issue_cert.sh" | Select-Object -ExpandProperty Output | Write-Host
+
+Write-Host "\nOrigin HTTPS configured. Try: https://$NewSubdomain/mcp/info and /mcp/tools" -ForegroundColor Green
