@@ -108,6 +108,21 @@ app.use(express.json({ type: 'application/json' }));
 app.use((req, _res, next) => { console.log(`[REQ] ${req.method} ${req.path}`); next(); });
 
 app.get('/mcp', authGuard, (_req, res) => res.status(426).json({ error: 'Upgrade Required' }));
+// Simple discovery endpoints for clients that use REST probing
+app.get('/mcp/tools', authGuard, (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({ tools: getTools() });
+});
+app.options('/mcp/tools', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Access-Token');
+    res.status(204).end();
+});
+app.head('/mcp/tools', authGuard, (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(200).end();
+});
 
 async function streamSse(req, res) {
     res.writeHead(200, {
