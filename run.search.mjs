@@ -169,7 +169,23 @@ app.post('/mcp/http', authGuard, async (req, res) => {
 });
 
 app.get('/', (_req, res) => res.json({ ok: true, tools: getTools() }));
-app.get('/mcp/info', authGuard, (_req, res) => res.json({ ok: true, tools: getTools() }));
+app.get('/mcp/info', authGuard, (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({
+        ok: true,
+        initialize: {
+            jsonrpc: '2.0',
+            result: {
+                protocolVersion: '2024-11-05',
+                serverInfo: { name: 'MCP_HTTP_SEARCH', version: '1.0.0' },
+                capabilities: { tools: { listChanged: true } },
+            },
+            id: 0,
+        },
+        toolsList: { jsonrpc: '2.0', result: { tools: getTools() }, id: 1 },
+        tools: getTools(),
+    });
+});
 // Debug route
 app.get('/whoami', (_req, res) => res.send('search-3003'));
 
