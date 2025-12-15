@@ -637,12 +637,17 @@ mkdir -p /var/log
 pkill -f "cloudflared tunnel --url http://127.0.0.1:__PORT__" 2>/dev/null || true
 nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:__PORT__ > /var/log/cloudflared-__PORT__.log 2>&1 &
 sleep 3
-for i in $(seq 1 30); do
-    URL=$(grep -m1 -oE "https://[a-z0-9-]+\\.trycloudflare\\.com" /var/log/cloudflared-__PORT__.log || true)
-    if [ -n "$URL" ]; then break; fi
+for i in $(seq 1 120); do
+    URL=$(grep -m1 -oE "https://[a-zA-Z0-9-]+\\.trycloudflare\\.com" /var/log/cloudflared-__PORT__.log || true)
+    if [ -n "$URL" ]; then echo "TUNNEL_URL=$URL"; exit 0; fi
     sleep 1
 done
-echo "TUNNEL_URL=$URL"
+echo "[WARN] Could not detect tunnel URL within timeout. Showing log excerpts..."
+echo '--- cloudflared log (head) ---'
+sed -n '1,120p' /var/log/cloudflared-__PORT__.log || true
+echo '--- cloudflared log (tail) ---'
+tail -n 120 /var/log/cloudflared-__PORT__.log || true
+echo "TUNNEL_URL="
 '@
 $cfScript = $cfScript -replace '__PORT__', $SearchPort
 Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/start_cf_tunnel.sh <<'EOSH'
