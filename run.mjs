@@ -3,17 +3,8 @@ import express from 'express';
 import { getTools, handleJsonRpc } from './src/mcp.mjs';
 
 const PORT = Number(process.env.PORT || 8080);
-const REQUIRED_TOKEN = process.env.MCP_TOKEN?.trim();
-
-function authGuard(req, res, next) {
-    if (!REQUIRED_TOKEN) return next(); // no auth configured
-    const hdr = req.headers['authorization'] || '';
-    const bearer = hdr.startsWith('Bearer ') ? hdr.slice(7) : undefined;
-    const token = bearer || req.query.token || req.headers['x-access-token'];
-    if (token === REQUIRED_TOKEN) return next();
-    res.setHeader('WWW-Authenticate', 'Bearer');
-    return res.status(401).json({ error: 'Unauthorized' });
-}
+// Public access (no token) for rapid Agent Builder testing.
+function authGuard(_req, _res, next) { return next(); }
 
 const app = express();
 app.use(express.json({ type: 'application/json' }));
