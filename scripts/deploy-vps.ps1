@@ -162,7 +162,7 @@ Write-Host "\n=== Deploy complete ===" -ForegroundColor Green
 
 # Optional: Nginx mapping for HTTPS domain (reverse proxy to port $SearchPort)
 Write-Host "Configuring Nginx mapping for /mcp/http and /mcp/sse under domain (optional step)..." -ForegroundColor Yellow
-$remoteNginxConf = "/etc/nginx/sites-available/mcp.quickitquote.com"
+$remoteNginxConf = "/etc/nginx/sites-available/001-mcp.quickitquote.com"
 
 $nginxConfContent = @"
 server {
@@ -204,7 +204,14 @@ Invoke-SSHCommand -SessionId $session.SessionId -Command "mkdir -p /etc/nginx/si
 Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > $remoteNginxConf <<'EOF'
 $nginxConfContent
 EOF" | Out-Null
-Invoke-SSHCommand -SessionId $session.SessionId -Command "ln -sf $remoteNginxConf /etc/nginx/sites-enabled/mcp.quickitquote.com" | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "rm -f /etc/nginx/sites-enabled/mcp.quickitquote.com /etc/nginx/sites-enabled/001-mcp.quickitquote.com" | Out-Null
+Invoke-SSHCommand -SessionId $session.SessionId -Command "ln -sf $remoteNginxConf /etc/nginx/sites-enabled/001-mcp.quickitquote.com" | Out-Null
 Invoke-SSHCommand -SessionId $session.SessionId -Command "nginx -t" | Select-Object -ExpandProperty Output | Write-Host
 Invoke-SSHCommand -SessionId $session.SessionId -Command "systemctl reload nginx" | Out-Null
 Write-Host "Nginx reloaded. If DNS/TLS are set, https://mcp.quickitquote.com/mcp/http and /mcp/sse proxy to :$SearchPort" -ForegroundColor Green
+
+# Validate origin routing with Host header
+Write-Host "Validating origin routing via curl..." -ForegroundColor Yellow
+$validateCmd = 'bash -lc ''curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" -H "Host: mcp.quickitquote.com" http://127.0.0.1/mcp/info'''
+$val = Invoke-SSHCommand -SessionId $session.SessionId -Command $validateCmd | Select-Object -ExpandProperty Output
+Write-Host $val
