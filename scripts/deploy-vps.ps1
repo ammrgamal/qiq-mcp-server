@@ -367,3 +367,90 @@ EOSH
 chmod +x /tmp/issue_cert.sh && bash /tmp/issue_cert.sh" | Select-Object -ExpandProperty Output | Write-Host
 
 Write-Host "\nOrigin HTTPS configured. Try: https://$NewSubdomain/mcp/info and /mcp/tools" -ForegroundColor Green
+
+# Ensure explicit HTTPS server block exists and proxies correctly
+Write-Host "Creating explicit HTTPS server block for $NewSubdomain ..." -ForegroundColor Yellow
+$httpsConfScript = @"
+#!/usr/bin/env bash
+set -e
+CRT_DIR="/etc/letsencrypt/live/$NewSubdomain"
+if [ ! -d "$CRT_DIR" ]; then
+  echo "Certificate directory missing: $CRT_DIR" >&2
+  exit 1
+fi
+FULLCHAIN="$CRT_DIR/fullchain.pem"
+PRIVKEY="$CRT_DIR/privkey.pem"
+CONF_PATH="/etc/nginx/sites-available/003-$NewSubdomain-ssl"
+cat > "$CONF_PATH" <<'EOF'
+server {
+    listen 443 ssl;
+    server_name __HOST__;
+    ssl_certificate __FULLCHAIN__;
+    ssl_certificate_key __PRIVKEY__;
+
+    location /mcp/http {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/http;
+    }
+
+    location /mcp/sse {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_pass http://127.0.0.1:__PORT__/mcp/sse;
+    }
+
+    location /mcp/info {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/info;
+    }
+
+    location /mcp/tools {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:__PORT__/mcp/tools;
+    }
+
+    location = /whoami {
+        proxy_pass http://127.0.0.1:__PORT__/whoami;
+    }
+}
+EOF
+sed -i "s|__HOST__|$NewSubdomain|g" "$CONF_PATH"
+sed -i "s|__FULLCHAIN__|$FULLCHAIN|g" "$CONF_PATH"
+sed -i "s|__PRIVKEY__|$PRIVKEY|g" "$CONF_PATH"
+sed -i "s|__PORT__|$SearchPort|g" "$CONF_PATH"
+ln -sf "$CONF_PATH" "/etc/nginx/sites-enabled/003-$NewSubdomain-ssl"
+nginx -t && systemctl reload nginx || true
+echo "HTTPS server block deployed: $CONF_PATH"
+"@
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/nginx_ssl_block.sh <<'EOSH'
+$httpsConfScript
+EOSH
+chmod +x /tmp/nginx_ssl_block.sh && bash /tmp/nginx_ssl_block.sh" | Select-Object -ExpandProperty Output | Write-Host
+
+# Validate HTTPS endpoints
+Write-Host "\nValidating HTTPS endpoints for $NewSubdomain ..." -ForegroundColor Yellow
+$validateHttps = @"
+#!/usr/bin/env bash
+set -e
+curl -i -sS https://$NewSubdomain/mcp/info | sed -n '1,25p'
+curl -i -sS https://$NewSubdomain/mcp/tools | sed -n '1,25p'
+curl -i -sS https://$NewSubdomain/whoami | sed -n '1,25p'
+"@
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/validate_https.sh <<'EOSH'
+$validateHttps
+EOSH
+chmod +x /tmp/validate_https.sh && bash /tmp/validate_https.sh" | Select-Object -ExpandProperty Output | Write-Host
