@@ -454,3 +454,25 @@ Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/validate_ht
 $validateHttps
 EOSH
 chmod +x /tmp/validate_https.sh && bash /tmp/validate_https.sh" | Select-Object -ExpandProperty Output | Write-Host
+
+# Extra diagnostics for mcp2 vhosts
+Write-Host "\nInspecting nginx vhosts for $NewSubdomain ..." -ForegroundColor Yellow
+$inspectScript = @"
+#!/usr/bin/env bash
+set -e
+echo '--- sites-enabled ---'; ls -l /etc/nginx/sites-enabled; echo
+echo '>>> 002 file'; sed -n '1,240p' /etc/nginx/sites-available/002-$NewSubdomain || true; echo
+echo '>>> 003 ssl file'; sed -n '1,240p' /etc/nginx/sites-available/003-$NewSubdomain-ssl || true; echo
+echo '--- nginx -T (filtered) ---'
+nginx -T 2>&1 | awk '/server_name $NewSubdomain/,/}/ {print}'
+echo
+echo '--- curl local with Host header (HTTP) ---'
+curl -i -sS -H 'Host: $NewSubdomain' http://127.0.0.1/mcp/info | sed -n '1,40p'
+echo
+echo '--- curl external HTTPS -k ---'
+curl -i -sS -k https://$NewSubdomain/mcp/info | sed -n '1,40p'
+"@
+Invoke-SSHCommand -SessionId $session.SessionId -Command "cat > /tmp/inspect_mcp2.sh <<'EOSH'
+$inspectScript
+EOSH
+chmod +x /tmp/inspect_mcp2.sh && bash /tmp/inspect_mcp2.sh" | Select-Object -ExpandProperty Output | Write-Host
